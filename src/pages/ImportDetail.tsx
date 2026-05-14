@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '@/integrations/supabase/client'
-import { ArrowLeft, CheckCircle2, AlertTriangle, HelpCircle, Pencil, Check, X } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, AlertTriangle, HelpCircle, Pencil, Check, X, GitCompare, Loader2, PackageMinus, PackagePlus, TrendingUp } from 'lucide-react'
 
 type Produit = {
   id: string
@@ -11,6 +11,24 @@ type Produit = {
   prix_achat: number
   actif: boolean
   statut_import: 'ia' | 'valide' | 'manuel'
+}
+
+type EcartPrix = {
+  reference: string | null
+  designation: string
+  unite_pdf: string
+  unite_db: string
+  prix_pdf: number
+  prix_db: number
+  delta: number
+}
+
+type CompareResult = {
+  total_pdf: number
+  total_db: number
+  manquants: Produit[]
+  fantomes: Produit[]
+  ecarts_prix: EcartPrix[]
 }
 
 type Import = {
@@ -39,6 +57,9 @@ export default function ImportDetail() {
   const [editId, setEditId] = useState<string | null>(null)
   const [editData, setEditData] = useState<Partial<Produit>>({})
   const [saving, setSaving] = useState(false)
+  const [comparing, setComparing] = useState(false)
+  const [compareResult, setCompareResult] = useState<CompareResult | null>(null)
+  const [compareError, setCompareError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!id) return
@@ -65,6 +86,16 @@ export default function ImportDetail() {
     setProduits(prev => prev.map(x => x.id === p.id ? { ...x, ...editData, statut_import: 'valide' } : x))
     setEditId(null)
     setSaving(false)
+  }
+
+  const runCompare = async () => {
+    setComparing(true)
+    setCompareError(null)
+    setCompareResult(null)
+    const { data, error } = await supabase.functions.invoke('compare-catalogue', { body: { import_id: id } })
+    if (error) { setCompareError(error.message); setComparing(false); return }
+    setCompareResult(data as CompareResult)
+    setComparing(false)
   }
 
   const validateAll = async () => {
@@ -97,6 +128,14 @@ export default function ImportDetail() {
             Import du {new Date(imp.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })} · {produits.length} produits
           </p>
         </div>
+        <button
+          onClick={runCompare}
+          disabled={comparing}
+          className="flex items-center gap-1.5 text-sm border border-blue-300 text-blue-700 rounded-lg px-4 py-2 hover:bg-blue-50 transition-colors"
+        >
+          {comparing ? <Loader2 className="w-4 h-4 animate-spin" /> : <GitCompare className="w-4 h-4" />}
+          {comparing ? 'Analyse en cours…' : 'Comparer avec source PDF'}
+        </button>
         {counts.ia > 0 && (
           <button
             onClick={validateAll}
@@ -189,6 +228,147 @@ export default function ImportDetail() {
             </tbody>
           </table>
         </div>
+        {/* Résultats de comparaison */}
+        {compareError && (
+          <div className="mt-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">
+            Erreur : {compareError}
+          </div>
+        )}
+
+        {compareResult && (
+          <div className="mt-6 space-y-4">
+            <div className="grid grid-cols-3 gap-3">
+              <div className={`rounded-xl border p-4 ${compareResult.manquants.length > 0 ? 'border-red-300 bg-red-50' : 'border-green-200 bg-green-50'}`}>
+                <div className="flex items-center gap-2 mb-1">
+                  <PackageMinus className={`w-4 h-4 ${compareResult.manquants.length > 0 ? 'text-red-500' : 'text-green-500'}`} />
+                  <span className="text-sm font-medium text-gray-700">Manquants en DB</span>
+                </div>
+                <div className={`text-2xl font-bold ${compareResult.manquants.length > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                  {compareResult.manquants.length}
+                </div>
+                <div className="text-xs text-gray-500 mt-0.5">dans PDF mais absents de la base</div>
+              </div>
+              <div className={`rounded-xl border p-4 ${compareResult.fantomes.length > 0 ? 'border-orange-300 bg-orange-50' : 'border-green-200 bg-green-50'}`}>
+                <div className="flex items-center gap-2 mb-1">
+                  <PackagePlus className={`w-4 h-4 ${compareResult.fantomes.length > 0 ? 'text-orange-500' : 'text-green-500'}`} />
+                  <span className="text-sm font-medium text-gray-700">Fantômes en DB</span>
+                </div>
+                <div className={`text-2xl font-bold ${compareResult.fantomes.length > 0 ? 'text-orange-600' : 'text-green-600'}`}>
+                  {compareResult.fantomes.length}
+                </div>
+                <div className="text-xs text-gray-500 mt-0.5">en base mais absents du PDF</div>
+              </div>
+              <div className={`rounded-xl border p-4 ${compareResult.ecarts_prix.length > 0 ? 'border-yellow-300 bg-yellow-50' : 'border-green-200 bg-green-50'}`}>
+                <div className="flex items-center gap-2 mb-1">
+                  <TrendingUp className={`w-4 h-4 ${compareResult.ecarts_prix.length > 0 ? 'text-yellow-500' : 'text-green-500'}`} />
+                  <span className="text-sm font-medium text-gray-700">Écarts de prix</span>
+                </div>
+                <div className={`text-2xl font-bold ${compareResult.ecarts_prix.length > 0 ? 'text-yellow-600' : 'text-green-600'}`}>
+                  {compareResult.ecarts_prix.length}
+                </div>
+                <div className="text-xs text-gray-500 mt-0.5">prix différents entre PDF et base</div>
+              </div>
+            </div>
+
+            {compareResult.manquants.length > 0 && (
+              <div className="bg-white rounded-xl border border-red-200 overflow-hidden">
+                <div className="px-4 py-3 bg-red-50 border-b border-red-200 flex items-center gap-2">
+                  <PackageMinus className="w-4 h-4 text-red-500" />
+                  <span className="text-sm font-semibold text-red-700">Articles manquants en base ({compareResult.manquants.length})</span>
+                </div>
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="text-left px-4 py-2 font-medium text-gray-600 w-24">Réf.</th>
+                      <th className="text-left px-4 py-2 font-medium text-gray-600">Désignation</th>
+                      <th className="text-left px-4 py-2 font-medium text-gray-600 w-20">Unité</th>
+                      <th className="text-right px-4 py-2 font-medium text-gray-600 w-28">PA HT (€)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {compareResult.manquants.map((p, i) => (
+                      <tr key={i} className="bg-red-50/50">
+                        <td className="px-4 py-2 font-mono text-xs text-gray-500">{p.reference ?? '—'}</td>
+                        <td className="px-4 py-2 text-gray-900">{p.designation}</td>
+                        <td className="px-4 py-2 text-gray-500">{p.unite}</td>
+                        <td className="px-4 py-2 text-right font-mono">{p.prix_achat.toFixed(2)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {compareResult.fantomes.length > 0 && (
+              <div className="bg-white rounded-xl border border-orange-200 overflow-hidden">
+                <div className="px-4 py-3 bg-orange-50 border-b border-orange-200 flex items-center gap-2">
+                  <PackagePlus className="w-4 h-4 text-orange-500" />
+                  <span className="text-sm font-semibold text-orange-700">Articles fantômes en base ({compareResult.fantomes.length})</span>
+                </div>
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="text-left px-4 py-2 font-medium text-gray-600 w-24">Réf.</th>
+                      <th className="text-left px-4 py-2 font-medium text-gray-600">Désignation</th>
+                      <th className="text-left px-4 py-2 font-medium text-gray-600 w-20">Unité</th>
+                      <th className="text-right px-4 py-2 font-medium text-gray-600 w-28">PA HT (€)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {compareResult.fantomes.map((p, i) => (
+                      <tr key={i} className="bg-orange-50/50">
+                        <td className="px-4 py-2 font-mono text-xs text-gray-500">{p.reference ?? '—'}</td>
+                        <td className="px-4 py-2 text-gray-900">{p.designation}</td>
+                        <td className="px-4 py-2 text-gray-500">{p.unite}</td>
+                        <td className="px-4 py-2 text-right font-mono">{p.prix_achat.toFixed(2)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {compareResult.ecarts_prix.length > 0 && (
+              <div className="bg-white rounded-xl border border-yellow-200 overflow-hidden">
+                <div className="px-4 py-3 bg-yellow-50 border-b border-yellow-200 flex items-center gap-2">
+                  <TrendingUp className="w-4 h-4 text-yellow-500" />
+                  <span className="text-sm font-semibold text-yellow-700">Écarts de prix ({compareResult.ecarts_prix.length})</span>
+                </div>
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="text-left px-4 py-2 font-medium text-gray-600 w-24">Réf.</th>
+                      <th className="text-left px-4 py-2 font-medium text-gray-600">Désignation</th>
+                      <th className="text-right px-4 py-2 font-medium text-gray-600 w-28">Prix PDF</th>
+                      <th className="text-right px-4 py-2 font-medium text-gray-600 w-28">Prix DB</th>
+                      <th className="text-right px-4 py-2 font-medium text-gray-600 w-24">Écart</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {compareResult.ecarts_prix.map((e, i) => (
+                      <tr key={i} className="bg-yellow-50/50">
+                        <td className="px-4 py-2 font-mono text-xs text-gray-500">{e.reference ?? '—'}</td>
+                        <td className="px-4 py-2 text-gray-900">{e.designation}</td>
+                        <td className="px-4 py-2 text-right font-mono">{e.prix_pdf.toFixed(2)}</td>
+                        <td className="px-4 py-2 text-right font-mono">{e.prix_db.toFixed(2)}</td>
+                        <td className={`px-4 py-2 text-right font-mono font-semibold ${e.delta > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                          {e.delta > 0 ? '+' : ''}{e.delta.toFixed(2)} €
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {compareResult.manquants.length === 0 && compareResult.fantomes.length === 0 && compareResult.ecarts_prix.length === 0 && (
+              <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-xl px-4 py-3 text-green-700 text-sm">
+                <CheckCircle2 className="w-4 h-4" />
+                <span>Import parfait — aucune anomalie détectée entre le PDF source et la base.</span>
+              </div>
+            )}
+          </div>
+        )}
       </main>
     </div>
   )
