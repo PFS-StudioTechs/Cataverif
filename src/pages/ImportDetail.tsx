@@ -11,6 +11,7 @@ type Produit = {
   prix_achat: number
   actif: boolean
   statut_import: 'ia' | 'valide' | 'manuel'
+  image_url: string | null
 }
 
 type EcartPrix = {
@@ -65,6 +66,8 @@ export default function ImportDetail() {
   const [compareError, setCompareError] = useState<string | null>(null)
   const [importing, setImporting] = useState(false)
   const [downloading, setDownloading] = useState(false)
+  const [extractingImages, setExtractingImages] = useState(false)
+  const [extractMsg, setExtractMsg] = useState<string | null>(null)
 
   useEffect(() => {
     if (!id) return
@@ -103,6 +106,23 @@ export default function ImportDetail() {
     if (!data) { setCompareError('Réponse vide — vérifier les logs Supabase Edge Functions'); return }
     if (data.error) { setCompareError(`Erreur serveur: ${data.error}`); return }
     setCompareResult(data as CompareResult)
+  }
+
+  const extractImages = async () => {
+    setExtractingImages(true)
+    setExtractMsg(null)
+    const { data: { session } } = await supabase.auth.getSession()
+    const resp = await fetch('/api/extract-images', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
+      body: JSON.stringify({ import_id: id }),
+    })
+    const result = await resp.json()
+    setExtractingImages(false)
+    if (result.error) { setExtractMsg(`Erreur : ${result.error}`); return }
+    setExtractMsg(`${result.updated} image(s) extraite(s) et liées aux articles.`)
+    const { data } = await supabase.from('produits').select('*').eq('import_id', id).order('designation')
+    setProduits((data as Produit[]) ?? [])
   }
 
   const downloadCatalogue = async () => {
@@ -171,6 +191,13 @@ export default function ImportDetail() {
           </p>
         </div>
         <button
+          onClick={extractImages}
+          disabled={extractingImages || imp.fichier_type !== 'pdf'}
+          className="flex items-center gap-1.5 text-sm border border-purple-300 text-purple-700 rounded-lg px-4 py-2 hover:bg-purple-50 transition-colors disabled:opacity-40"
+        >
+          <span>{extractingImages ? 'Extraction en cours…' : 'Extraire images'}</span>
+        </button>
+        <button
           onClick={downloadCatalogue}
           disabled={downloading}
           className="flex items-center gap-1.5 text-sm border border-gray-300 text-gray-600 rounded-lg px-4 py-2 hover:bg-gray-50 transition-colors"
@@ -225,6 +252,7 @@ export default function ImportDetail() {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
+                <th className="px-4 py-3 w-12"></th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600 w-24">Réf.</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Désignation</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600 w-20">Unité</th>
@@ -238,6 +266,7 @@ export default function ImportDetail() {
                 <tr key={p.id} className={`hover:bg-gray-50 transition-colors ${!p.actif ? 'opacity-40' : ''}`}>
                   {editId === p.id ? (
                     <>
+                      <td className="px-4 py-2" />
                       <td className="px-4 py-2">
                         <input className="w-full border rounded px-2 py-1 text-xs font-mono" value={editData.reference ?? ''} onChange={e => setEditData(d => ({ ...d, reference: e.target.value }))} />
                       </td>
@@ -260,6 +289,11 @@ export default function ImportDetail() {
                     </>
                   ) : (
                     <>
+                      <td className="px-4 py-3">
+                        {p.image_url
+                          ? <img src={p.image_url} alt="" className="w-8 h-8 object-cover rounded" />
+                          : <div className="w-8 h-8 bg-gray-100 rounded" />}
+                      </td>
                       <td className="px-4 py-3 font-mono text-xs text-gray-500">{p.reference ?? '—'}</td>
                       <td className="px-4 py-3 text-gray-900">{p.designation}</td>
                       <td className="px-4 py-3 text-gray-500">{p.unite}</td>
@@ -279,6 +313,12 @@ export default function ImportDetail() {
           </table>
         </div>
         {/* Résultats de comparaison */}
+        {extractMsg && (
+          <div className={`mt-4 rounded-xl px-4 py-3 text-sm ${extractMsg.startsWith('Erreur') ? 'bg-red-50 border border-red-200 text-red-700' : 'bg-purple-50 border border-purple-200 text-purple-700'}`}>
+            {extractMsg}
+          </div>
+        )}
+
         {compareError && (
           <div className="mt-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">
             Erreur : {compareError}
