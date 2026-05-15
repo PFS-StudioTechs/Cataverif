@@ -155,7 +155,10 @@ export default function ImportDetail() {
     }
     await supabase.from('produits').update({ statut_import: 'valide', updated_at: new Date().toISOString() }).eq('import_id', id)
     const { data } = await supabase.from('produits').select('*').eq('import_id', id).order('designation')
-    setProduits((data as Produit[]) ?? [])
+    const newList = (data as Produit[]) ?? []
+    setProduits(newList)
+    await supabase.from('catalogue_imports').update({ nb_produits_extraits: newList.length }).eq('id', id)
+    setImp(prev => prev ? { ...prev, nb_produits_extraits: newList.length } : prev)
     setCompareResult(null)
     setImporting(false)
   }

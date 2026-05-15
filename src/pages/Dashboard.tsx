@@ -14,6 +14,7 @@ type Import = {
   erreur_message: string | null
   created_at: string
   fournisseurs: { nom: string } | null
+  produits: [{ count: number }] | null
 }
 
 const statutIcon = (s: string) => {
@@ -37,7 +38,7 @@ export default function Dashboard() {
     setLoading(true)
     const { data } = await supabase
       .from('catalogue_imports')
-      .select('*, fournisseurs(nom)')
+      .select('*, fournisseurs(nom), produits(count)')
       .order('created_at', { ascending: false })
     setImports((data as Import[]) ?? [])
     setLoading(false)
@@ -115,7 +116,7 @@ export default function Dashboard() {
                       )}
                     </td>
                     <td className="px-4 py-3 text-right font-mono text-gray-700">
-                      {imp.nb_produits_extraits ?? '—'}
+                      {imp.produits?.[0]?.count ?? imp.nb_produits_extraits ?? '—'}
                     </td>
                     <td className="px-4 py-3 text-gray-500 text-xs">
                       {new Date(imp.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
