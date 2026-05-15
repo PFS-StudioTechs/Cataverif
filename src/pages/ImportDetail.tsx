@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '@/integrations/supabase/client'
-import { ArrowLeft, CheckCircle2, AlertTriangle, HelpCircle, Pencil, Check, X, GitCompare, PackageMinus, PackagePlus, TrendingUp } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, AlertTriangle, HelpCircle, Pencil, Check, X, GitCompare, PackageMinus, PackagePlus, TrendingUp, Download } from 'lucide-react'
 
 type Produit = {
   id: string
@@ -64,6 +64,7 @@ export default function ImportDetail() {
   const [compareResult, setCompareResult] = useState<CompareResult | null>(null)
   const [compareError, setCompareError] = useState<string | null>(null)
   const [importing, setImporting] = useState(false)
+  const [downloading, setDownloading] = useState(false)
 
   useEffect(() => {
     if (!id) return
@@ -102,6 +103,18 @@ export default function ImportDetail() {
     if (!data) { setCompareError('Réponse vide — vérifier les logs Supabase Edge Functions'); return }
     if (data.error) { setCompareError(`Erreur serveur: ${data.error}`); return }
     setCompareResult(data as CompareResult)
+  }
+
+  const downloadCatalogue = async () => {
+    if (!imp) return
+    setDownloading(true)
+    const { data, error } = await supabase.storage.from('artisan-documents').createSignedUrl(imp.fichier_url, 60)
+    setDownloading(false)
+    if (error || !data) return
+    const a = document.createElement('a')
+    a.href = data.signedUrl
+    a.download = `catalogue-${imp.fournisseurs?.nom ?? 'import'}.${imp.fichier_type}`
+    a.click()
   }
 
   const importerManquants = async () => {
@@ -157,6 +170,14 @@ export default function ImportDetail() {
             Import du {new Date(imp.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })} · {produits.length} produits
           </p>
         </div>
+        <button
+          onClick={downloadCatalogue}
+          disabled={downloading}
+          className="flex items-center gap-1.5 text-sm border border-gray-300 text-gray-600 rounded-lg px-4 py-2 hover:bg-gray-50 transition-colors"
+        >
+          <Download className="w-4 h-4" />
+          <span>{downloading ? 'Téléchargement…' : 'Télécharger catalogue'}</span>
+        </button>
         <button
           onClick={runCompare}
           disabled={comparing}
