@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '@/integrations/supabase/client'
-import { ArrowLeft, CheckCircle2, AlertTriangle, HelpCircle, Pencil, Check, X, GitCompare, Loader2, PackageMinus, PackagePlus, TrendingUp } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, AlertTriangle, HelpCircle, Pencil, Check, X, GitCompare, PackageMinus, PackagePlus, TrendingUp } from 'lucide-react'
 
 type Produit = {
   id: string
@@ -26,6 +26,7 @@ type EcartPrix = {
 type CompareResult = {
   total_pdf: number
   total_db: number
+  extraction_method?: string
   manquants: Produit[]
   fantomes: Produit[]
   ecarts_prix: EcartPrix[]
@@ -38,6 +39,8 @@ type Import = {
   statut: string
   nb_produits_extraits: number | null
   created_at: string
+  artisan_id: string
+  fournisseur_id: string
   fournisseurs: { nom: string } | null
 }
 
@@ -60,6 +63,7 @@ export default function ImportDetail() {
   const [comparing, setComparing] = useState(false)
   const [compareResult, setCompareResult] = useState<CompareResult | null>(null)
   const [compareError, setCompareError] = useState<string | null>(null)
+  const [importing, setImporting] = useState(false)
 
   useEffect(() => {
     if (!id) return
@@ -93,9 +97,34 @@ export default function ImportDetail() {
     setCompareError(null)
     setCompareResult(null)
     const { data, error } = await supabase.functions.invoke('compare-catalogue', { body: { import_id: id } })
-    if (error) { setCompareError(error.message); setComparing(false); return }
-    setCompareResult(data as CompareResult)
     setComparing(false)
+    if (error) { setCompareError(`Erreur fonction: ${error.message}`); return }
+    if (!data) { setCompareError('Réponse vide — vérifier les logs Supabase Edge Functions'); return }
+    if (data.error) { setCompareError(`Erreur serveur: ${data.error}`); return }
+    setCompareResult(data as CompareResult)
+  }
+
+  const importerManquants = async () => {
+    if (!compareResult || !imp) return
+    setImporting(true)
+    const rows = compareResult.manquants.map(p => ({
+      artisan_id: imp.artisan_id,
+      fournisseur_id: imp.fournisseur_id,
+      import_id: id,
+      reference: p.reference,
+      designation: p.designation,
+      unite: p.unite,
+      prix_achat: p.prix_achat,
+      statut_import: 'valide',
+    }))
+    if (rows.length > 0) {
+      await supabase.from('produits').insert(rows)
+    }
+    await supabase.from('produits').update({ statut_import: 'valide', updated_at: new Date().toISOString() }).eq('import_id', id)
+    const { data } = await supabase.from('produits').select('*').eq('import_id', id).order('designation')
+    setProduits((data as Produit[]) ?? [])
+    setCompareResult(null)
+    setImporting(false)
   }
 
   const validateAll = async () => {
@@ -117,7 +146,7 @@ export default function ImportDetail() {
   if (!imp) return <div className="min-h-screen flex items-center justify-center text-red-500">Import introuvable</div>
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50" translate="no">
       <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center gap-4">
         <button onClick={() => navigate('/')} className="text-gray-400 hover:text-gray-700 transition-colors">
           <ArrowLeft className="w-5 h-5" />
@@ -133,8 +162,8 @@ export default function ImportDetail() {
           disabled={comparing}
           className="flex items-center gap-1.5 text-sm border border-blue-300 text-blue-700 rounded-lg px-4 py-2 hover:bg-blue-50 transition-colors"
         >
-          {comparing ? <Loader2 className="w-4 h-4 animate-spin" /> : <GitCompare className="w-4 h-4" />}
-          {comparing ? 'Analyse en cours…' : 'Comparer avec source PDF'}
+          <GitCompare className={`w-4 h-4 ${comparing ? 'animate-spin' : ''}`} />
+          <span>{comparing ? 'Analyse en cours…' : 'Comparer avec fichier source'}</span>
         </button>
         {counts.ia > 0 && (
           <button
@@ -237,6 +266,11 @@ export default function ImportDetail() {
 
         {compareResult && (
           <div className="mt-6 space-y-4">
+            <div className="flex items-center gap-4 text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-4 py-2">
+              <span>PDF analysé : <strong className={compareResult.total_pdf !== compareResult.total_db ? 'text-orange-600' : 'text-gray-700'}>{compareResult.total_pdf} articles</strong></span>
+              <span>Base : <strong className="text-gray-700">{compareResult.total_db} articles</strong></span>
+              {compareResult.extraction_method && <span className="ml-auto font-mono">{compareResult.extraction_method}</span>}
+            </div>
             <div className="grid grid-cols-3 gap-3">
               <div className={`rounded-xl border p-4 ${compareResult.manquants.length > 0 ? 'border-red-300 bg-red-50' : 'border-green-200 bg-green-50'}`}>
                 <div className="flex items-center gap-2 mb-1">
@@ -359,6 +393,17 @@ export default function ImportDetail() {
                   </tbody>
                 </table>
               </div>
+            )}
+
+            {compareResult.manquants.length > 0 && (
+              <button
+                onClick={importerManquants}
+                disabled={importing}
+                className="flex items-center gap-2 bg-red-600 text-white rounded-lg px-4 py-2 text-sm hover:bg-red-700 transition-colors disabled:opacity-50"
+              >
+                <PackageMinus className="w-4 h-4" />
+                {importing ? 'Import en cours…' : `Importer les ${compareResult.manquants.length} manquants + valider tout`}
+              </button>
             )}
 
             {compareResult.manquants.length === 0 && compareResult.fantomes.length === 0 && compareResult.ecarts_prix.length === 0 && (
