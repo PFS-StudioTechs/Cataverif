@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/integrations/supabase/client'
 import { signOut } from '@/hooks/useAuth'
-import { PackageSearch, LogOut, RefreshCw, CheckCircle2, AlertCircle, Clock } from 'lucide-react'
+import { PackageSearch, LogOut, RefreshCw, CheckCircle2, AlertCircle, Clock, Trash2 } from 'lucide-react'
 
 type Import = {
   id: string
@@ -33,6 +33,19 @@ export default function Dashboard() {
   const [imports, setImports] = useState<Import[]>([])
   const [loading, setLoading] = useState(true)
   const navigate = useNavigate()
+
+  const deleteImport = async (imp: Import) => {
+    const nbProduits = imp.produits?.[0]?.count ?? 0
+    const msg = nbProduits > 0
+      ? `Cet import contient ${nbProduits} produit(s) en base. Supprimer quand même ?`
+      : `Supprimer cet import ${imp.fournisseurs?.nom ?? ''} ?`
+    if (!window.confirm(msg)) return
+    if (nbProduits > 0) {
+      await supabase.from('produits').delete().eq('import_id', imp.id)
+    }
+    await supabase.from('catalogue_imports').delete().eq('id', imp.id)
+    setImports(prev => prev.filter(i => i.id !== imp.id))
+  }
 
   const load = async () => {
     setLoading(true)
@@ -122,12 +135,21 @@ export default function Dashboard() {
                       {new Date(imp.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                     </td>
                     <td className="px-4 py-3">
-                      <button
-                        onClick={() => navigate(`/import/${imp.id}`)}
-                        className="text-blue-600 hover:text-blue-800 text-xs font-medium"
-                      >
-                        Vérifier →
-                      </button>
+                      <div className="flex items-center gap-3 justify-end">
+                        <button
+                          onClick={() => navigate(`/import/${imp.id}`)}
+                          className="text-blue-600 hover:text-blue-800 text-xs font-medium"
+                        >
+                          Vérifier →
+                        </button>
+                        <button
+                          onClick={() => deleteImport(imp)}
+                          className="text-gray-300 hover:text-red-500 transition-colors"
+                          title="Supprimer cet import"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
