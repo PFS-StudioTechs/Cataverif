@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '@/integrations/supabase/client'
-import { ArrowLeft, CheckCircle2, AlertTriangle, HelpCircle, Pencil, Check, X, GitCompare, PackageMinus, PackagePlus, TrendingUp, Download } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, AlertTriangle, HelpCircle, Pencil, Check, X, GitCompare, PackageMinus, PackagePlus, TrendingUp, Download, Trash2 } from 'lucide-react'
 
 type Produit = {
   id: string
@@ -67,6 +67,11 @@ export default function ImportDetail() {
   const [compareError, setCompareError] = useState<string | null>(null)
   const [importing, setImporting] = useState(false)
   const [downloading, setDownloading] = useState(false)
+
+  const deleteFantome = async (id: string) => {
+    await supabase.from('produits').update({ actif: false }).eq('id', id)
+    setCompareResult(prev => prev ? { ...prev, fantomes: prev.fantomes.filter(f => f.id !== id) } : prev)
+  }
   const [extractingImages, setExtractingImages] = useState(false)
   const [extractMsg, setExtractMsg] = useState<string | null>(null)
 
@@ -411,6 +416,7 @@ export default function ImportDetail() {
                       <th className="text-left px-4 py-2 font-medium text-gray-600">Désignation</th>
                       <th className="text-left px-4 py-2 font-medium text-gray-600 w-20">Unité</th>
                       <th className="text-right px-4 py-2 font-medium text-gray-600 w-28">PA HT (€)</th>
+                      <th className="w-10" />
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -420,6 +426,11 @@ export default function ImportDetail() {
                         <td className="px-4 py-2 text-gray-900">{p.designation}</td>
                         <td className="px-4 py-2 text-gray-500">{p.unite}</td>
                         <td className="px-4 py-2 text-right font-mono">{p.prix_achat.toFixed(2)}</td>
+                        <td className="px-2 py-1.5 text-right">
+                          <button onClick={() => deleteFantome(p.id)} title="Supprimer de la base" className="p-1 rounded hover:bg-red-100 text-red-400 hover:text-red-600 transition-colors">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
