@@ -174,6 +174,7 @@ export default function ImportDetail() {
 
       for (const chunk of chunks) {
         setCompareProgress(`Pages ${chunk.page_start + 1}–${chunk.page_end} / ${total_pages}`)
+        await new Promise(r => setTimeout(r, 3000))
         const res = await supabase.functions.invoke('compare-catalogue', {
           body: { import_id: id, mode: 'extract', chunk_path: chunk.path }
         })
