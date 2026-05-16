@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/integrations/supabase/client'
-import { ArrowLeft, Pencil, Check, X, Trash2 } from 'lucide-react'
+import { ArrowLeft, Pencil, Check, X, Trash2, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react'
+
+type SortField = 'fournisseur' | 'reference' | 'designation' | 'unite' | 'prix_achat' | 'statut_import'
+type SortDir = 'asc' | 'desc'
 
 type Produit = {
   id: string
@@ -29,6 +32,18 @@ export default function Articles() {
   const [editId, setEditId] = useState<string | null>(null)
   const [editData, setEditData] = useState<Partial<Produit>>({})
   const [saving, setSaving] = useState(false)
+  const [sortField, setSortField] = useState<SortField>('designation')
+  const [sortDir, setSortDir] = useState<SortDir>('asc')
+
+  const toggleSort = (field: SortField) => {
+    if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortField(field); setSortDir('asc') }
+  }
+
+  const SortIcon = ({ field }: { field: SortField }) => {
+    if (sortField !== field) return <ChevronsUpDown className="w-3 h-3 inline ml-1 opacity-30" />
+    return sortDir === 'asc' ? <ChevronUp className="w-3 h-3 inline ml-1" /> : <ChevronDown className="w-3 h-3 inline ml-1" />
+  }
 
   useEffect(() => {
     load()
@@ -63,10 +78,24 @@ export default function Articles() {
 
   const fournisseurs = [...new Map(produits.map(p => [p.fournisseur_id, p.fournisseurs?.nom ?? '—'])).entries()]
 
-  const filtered = produits.filter(p =>
-    (filter === 'tous' || p.statut_import === filter) &&
-    (fournisseurFilter === 'tous' || p.fournisseur_id === fournisseurFilter)
-  )
+  const filtered = produits
+    .filter(p =>
+      (filter === 'tous' || p.statut_import === filter) &&
+      (fournisseurFilter === 'tous' || p.fournisseur_id === fournisseurFilter)
+    )
+    .sort((a, b) => {
+      let va: string | number = ''
+      let vb: string | number = ''
+      if (sortField === 'fournisseur') { va = a.fournisseurs?.nom ?? ''; vb = b.fournisseurs?.nom ?? '' }
+      else if (sortField === 'reference') { va = a.reference ?? ''; vb = b.reference ?? '' }
+      else if (sortField === 'designation') { va = a.designation; vb = b.designation }
+      else if (sortField === 'unite') { va = a.unite; vb = b.unite }
+      else if (sortField === 'prix_achat') { va = a.prix_achat; vb = b.prix_achat }
+      else if (sortField === 'statut_import') { va = a.statut_import; vb = b.statut_import }
+      if (va < vb) return sortDir === 'asc' ? -1 : 1
+      if (va > vb) return sortDir === 'asc' ? 1 : -1
+      return 0
+    })
 
   return (
     <div className="min-h-screen bg-gray-50" translate="no">
@@ -98,12 +127,11 @@ export default function Articles() {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600 w-32">Fournisseur</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600 w-24">Réf.</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Désignation</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600 w-20">Unité</th>
-                  <th className="text-right px-4 py-3 font-medium text-gray-600 w-28">PA HT (€)</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600 w-24">Statut</th>
+                  {([['fournisseur','Fournisseur','w-32','left'],['reference','Réf.','w-24','left'],['designation','Désignation','','left'],['unite','Unité','w-20','left'],['prix_achat','PA HT (€)','w-28','right'],['statut_import','Statut','w-24','left']] as [SortField,string,string,string][]).map(([f,label,w,align]) => (
+                    <th key={f} onClick={() => toggleSort(f)} className={`px-4 py-3 font-medium text-gray-600 cursor-pointer hover:bg-gray-100 select-none ${w} text-${align}`}>
+                      {label}<SortIcon field={f} />
+                    </th>
+                  ))}
                   <th className="px-4 py-3 w-20"></th>
                 </tr>
               </thead>
