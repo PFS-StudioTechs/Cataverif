@@ -129,7 +129,10 @@ def call_claude_text(text: str, ai: anthropic.Anthropic) -> list:
 Pour chaque produit : référence article, désignation complète, unité de vente, prix HT en euros, numéro de page.
 Réponds UNIQUEMENT en JSON compact sur une seule ligne, sans aucun texte avant ou après :
 {{"p":[{{"r":"ref_ou_null","d":"designation","u":"unite","pa":0.00,"pg":1}}]}}
-Règles : r=null si absent, u="u" si absente, pa=0 si absent, pg=numéro de la section === PAGE N === où le produit apparaît.
+Règles :
+- r=null si absent, u="u" si absente, pa=0 si absent, pg=numéro de la section === PAGE N === où le produit apparaît.
+- Si un même article a plusieurs prix selon une variante (qualité, finition, conditionnement, taille, etc.), extraire UN article par prix. Concaténer le code article et la variante dans r (ex: "U11 FREE", "U11 CLASSIC", "REF001 5L").
+- Extraire TOUTES les lignes ayant un prix, y compris les forfaits, suppléments et surcoûts.
 
 TEXTE DU CATALOGUE :
 {text}"""
