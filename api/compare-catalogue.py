@@ -13,7 +13,7 @@ ANTHROPIC_KEY = os.environ["ANTHROPIC_API_KEY"]
 
 BUCKET = "artisan-documents"
 SONNET = "claude-sonnet-4-6"
-CHUNK_CHARS = 40000
+PAGES_PER_CHUNK = 10
 
 
 class handler(BaseHTTPRequestHandler):
@@ -81,22 +81,43 @@ class handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
 
+def page_to_ordered_text(page) -> str:
+    words = page.get_text("words")
+    if not words:
+        return ""
+    words_sorted = sorted(words, key=lambda w: (w[1], w[0]))
+    lines = []
+    current_line_words = []
+    current_y = None
+    for w in words_sorted:
+        y0, word = w[1], w[4]
+        if current_y is None or abs(y0 - current_y) > 5:
+            if current_line_words:
+                lines.append(" ".join(current_line_words))
+            current_line_words = [word]
+            current_y = y0
+        else:
+            current_line_words.append(word)
+    if current_line_words:
+        lines.append(" ".join(current_line_words))
+    return "\n".join(lines)
+
+
 def extract_pdf(file_bytes: bytes, ai: anthropic.Anthropic) -> list:
     doc = fitz.open(stream=file_bytes, filetype="pdf")
-    all_text = []
+    pages_text = []
     for page in doc:
-        text = page.get_text("text").strip()
+        text = page_to_ordered_text(page)
         if text:
-            all_text.append(text)
+            pages_text.append(text)
     doc.close()
 
-    full_text = "\n\n---\n\n".join(all_text)
-    if not full_text.strip():
+    if not pages_text:
         return []
 
     produits = []
-    for i in range(0, len(full_text), CHUNK_CHARS):
-        chunk = full_text[i:i + CHUNK_CHARS]
+    for i in range(0, len(pages_text), PAGES_PER_CHUNK):
+        chunk = "\n\n---\n\n".join(pages_text[i:i + PAGES_PER_CHUNK])
         produits.extend(call_claude_text(chunk, ai))
 
     return deduplicate(produits)
