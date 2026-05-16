@@ -32,6 +32,7 @@ const statutLabel: Record<string, string> = {
 export default function Imports() {
   const [imports, setImports] = useState<Import[]>([])
   const [loading, setLoading] = useState(true)
+  const [filtreStatut, setFiltreStatut] = useState<string>("tous")
   const navigate = useNavigate()
 
   const deleteImport = async (imp: Import) => {
@@ -69,7 +70,7 @@ export default function Imports() {
       </header>
 
       <main className="max-w-5xl mx-auto px-6 py-8">
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center justify-between mb-4">
           <h1 className="text-xl font-semibold text-gray-900">Imports catalogue</h1>
           <button
             onClick={load}
@@ -78,6 +79,24 @@ export default function Imports() {
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Actualiser
           </button>
+        </div>
+        <div className="flex gap-2 mb-6">
+          {(["tous", "termine", "en_cours", "erreur"] as const).map(s => (
+            <button
+              key={s}
+              onClick={() => setFiltreStatut(s)}
+              className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
+                filtreStatut === s
+                  ? s === "erreur" ? "bg-red-100 text-red-700 border-red-300"
+                    : s === "termine" ? "bg-green-100 text-green-700 border-green-300"
+                    : s === "en_cours" ? "bg-yellow-100 text-yellow-700 border-yellow-300"
+                    : "bg-gray-900 text-white border-gray-900"
+                  : "bg-white text-gray-500 border-gray-200 hover:border-gray-400"
+              }`}
+            >
+              {s === "tous" ? "Tous" : statutLabel[s] ?? s}
+            </button>
+          ))}
         </div>
 
         {loading ? (
@@ -103,7 +122,7 @@ export default function Imports() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {imports.map(imp => (
+                {(filtreStatut === "tous" ? imports : imports.filter(i => i.statut === filtreStatut)).map(imp => (
                   <tr key={imp.id} className="hover:bg-gray-50 transition-colors">
                     <td className="px-4 py-3 font-medium text-gray-900">
                       {imp.fournisseurs?.nom ?? '—'}
