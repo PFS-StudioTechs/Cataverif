@@ -34,6 +34,8 @@ export default function Articles() {
   const [saving, setSaving] = useState(false)
   const [sortField, setSortField] = useState<SortField>('designation')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [doublonsOnly, setDoublonsOnly] = useState(false)
 
   const toggleSort = (field: SortField) => {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
@@ -74,14 +76,38 @@ export default function Articles() {
     if (!window.confirm('Supprimer cet article ?')) return
     await supabase.from('produits').update({ actif: false }).eq('id', id)
     setProduits(prev => prev.filter(p => p.id !== id))
+    setSelected(prev => { const n = new Set(prev); n.delete(id); return n })
   }
 
+  const deleteSelected = async () => {
+    if (!window.confirm(`Supprimer ${selected.size} article(s) ?`)) return
+    const ids = [...selected]
+    for (const id of ids) await supabase.from('produits').update({ actif: false }).eq('id', id)
+    setProduits(prev => prev.filter(p => !selected.has(p.id)))
+    setSelected(new Set())
+  }
+
+  const toggleOne = (id: string) => setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
+  const toggleAll = (ids: string[]) => setSelected(prev => prev.size === ids.length && ids.every(id => prev.has(id)) ? new Set() : new Set(ids))
+
   const fournisseurs = [...new Map(produits.map(p => [p.fournisseur_id, p.fournisseurs?.nom ?? '—'])).entries()]
+
+  const doublonIds = new Set(
+    Object.values(
+      produits.filter(p => p.reference).reduce((acc, p) => {
+        const key = `${p.fournisseur_id}|${p.reference!.trim().toLowerCase()}`
+        acc[key] = acc[key] ?? []
+        acc[key].push(p.id)
+        return acc
+      }, {} as Record<string, string[]>)
+    ).filter(ids => ids.length > 1).flat()
+  )
 
   const filtered = produits
     .filter(p =>
       (filter === 'tous' || p.statut_import === filter) &&
-      (fournisseurFilter === 'tous' || p.fournisseur_id === fournisseurFilter)
+      (fournisseurFilter === 'tous' || p.fournisseur_id === fournisseurFilter) &&
+      (!doublonsOnly || doublonIds.has(p.id))
     )
     .sort((a, b) => {
       let va: string | number = ''
@@ -117,6 +143,14 @@ export default function Articles() {
               {k === 'tous' ? `Tous (${produits.length})` : k === 'ia' ? `IA (${produits.filter(p => p.statut_import === 'ia').length})` : k === 'valide' ? `Validés (${produits.filter(p => p.statut_import === 'valide').length})` : `Manuels (${produits.filter(p => p.statut_import === 'manuel').length})`}
             </button>
           ))}
+          <button onClick={() => { setDoublonsOnly(d => !d); setSelected(new Set()) }} className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${doublonsOnly ? 'bg-orange-500 text-white border-orange-500' : 'bg-white border-orange-300 text-orange-600 hover:border-orange-500'}`}>
+            Doublons {doublonsOnly ? `(${doublonIds.size})` : doublonIds.size > 0 ? `(${doublonIds.size})` : ''}
+          </button>
+          {selected.size > 0 && (
+            <button onClick={deleteSelected} className="px-3 py-1.5 rounded-full text-xs font-medium border border-red-300 text-red-600 hover:bg-red-50 transition-colors">
+              Supprimer ({selected.size})
+            </button>
+          )}
           <span className="ml-auto self-center text-xs text-gray-400">{filtered.length} article{filtered.length !== 1 ? 's' : ''}</span>
         </div>
 
@@ -127,6 +161,7 @@ export default function Articles() {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
+                  <th className="w-8 px-3 py-3"><input type="checkbox" checked={filtered.length > 0 && filtered.every(p => selected.has(p.id))} onChange={() => toggleAll(filtered.map(p => p.id))} className="cursor-pointer" /></th>
                   {([['fournisseur','Fournisseur','w-32','left'],['reference','Réf.','w-24','left'],['designation','Désignation','','left'],['unite','Unité','w-20','left'],['prix_achat','PA HT (€)','w-28','right'],['statut_import','Statut','w-24','left']] as [SortField,string,string,string][]).map(([f,label,w,align]) => (
                     <th key={f} onClick={() => toggleSort(f)} className={`px-4 py-3 font-medium text-gray-600 cursor-pointer hover:bg-gray-100 select-none ${w} text-${align}`}>
                       {label}<SortIcon field={f} />
@@ -137,9 +172,10 @@ export default function Articles() {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {filtered.map(p => (
-                  <tr key={p.id} className="hover:bg-gray-50 transition-colors">
+                  <tr key={p.id} className={`hover:bg-gray-50 transition-colors ${selected.has(p.id) ? 'bg-blue-50' : doublonIds.has(p.id) ? 'bg-orange-50/50' : ''}`}>
                     {editId === p.id ? (
                       <>
+                        <td className="px-3 py-2" />
                         <td className="px-4 py-2 text-xs text-gray-400">{p.fournisseurs?.nom ?? '—'}</td>
                         <td className="px-4 py-2"><input className="w-full border rounded px-2 py-1 text-xs font-mono" value={editData.reference ?? ''} onChange={e => setEditData(d => ({ ...d, reference: e.target.value || null }))} /></td>
                         <td className="px-4 py-2"><input className="w-full border rounded px-2 py-1 text-xs" value={editData.designation ?? ''} onChange={e => setEditData(d => ({ ...d, designation: e.target.value }))} /></td>
@@ -155,6 +191,7 @@ export default function Articles() {
                       </>
                     ) : (
                       <>
+                        <td className="px-3 py-3"><input type="checkbox" checked={selected.has(p.id)} onChange={() => toggleOne(p.id)} className="cursor-pointer" /></td>
                         <td className="px-4 py-3 text-xs text-gray-500 font-medium">{p.fournisseurs?.nom ?? '—'}</td>
                         <td className="px-4 py-3 font-mono text-xs text-gray-500">{p.reference ?? '—'}</td>
                         <td className="px-4 py-3 text-gray-900">{p.designation}</td>
