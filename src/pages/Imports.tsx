@@ -63,6 +63,13 @@ export default function Imports() {
         </button>
         <span className="font-semibold text-gray-900 flex-1">Imports catalogue</span>
         <button
+          onClick={load}
+          disabled={loading}
+          className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 border border-gray-200 rounded-lg px-3 py-1.5 hover:bg-gray-50 transition-colors mr-3"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Actualiser
+        </button>
+        <button
           onClick={() => signOut()}
           className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-900 transition-colors"
         >
@@ -71,16 +78,6 @@ export default function Imports() {
       </header>
 
       <main className="max-w-5xl mx-auto px-6 py-8">
-        <div className="flex items-center justify-between mb-4">
-          <h1 className="text-xl font-semibold text-gray-900">Imports catalogue</h1>
-          <button
-            onClick={load}
-            disabled={loading}
-            className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 border border-gray-200 rounded-lg px-3 py-1.5 hover:bg-gray-50 transition-colors"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Actualiser
-          </button>
-        </div>
         <div className="flex gap-2 mb-6">
           {(["tous", "termine", "en_cours", "erreur"] as const).map(s => (
             <button
@@ -110,15 +107,15 @@ export default function Imports() {
             <p>Aucun import trouvé</p>
           </div>
         ) : (
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            <table className="w-full text-sm">
+          <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+            <table className="w-full text-sm min-w-[640px]">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  <th className="text-center px-4 py-3 font-medium text-gray-600">Fournisseur</th>
-                  <th className="text-center px-4 py-3 font-medium text-gray-600 w-20">Fichier</th>
-                  <th className="text-center px-4 py-3 font-medium text-gray-600 w-36">Statut</th>
-                  <th className="text-center px-4 py-3 font-medium text-gray-600 w-24">Produits</th>
-                  <th className="text-center px-4 py-3 font-medium text-gray-600 w-44">Date</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600">Fournisseur</th>
+                  <th className="text-center px-4 py-3 font-medium text-gray-600 w-16">Fichier</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600 w-32">Statut</th>
+                  <th className="text-center px-4 py-3 font-medium text-gray-600 w-20">Produits</th>
+                  <th className="text-center px-4 py-3 font-medium text-gray-600 w-40">Date</th>
                   <th className="px-4 py-3 w-28"></th>
                 </tr>
               </thead>
