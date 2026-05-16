@@ -328,8 +328,8 @@ export default function ImportDetail() {
                 </button>
               ))}
             </div>
-            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                <table className="w-full text-sm table-fixed">
+            <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+                <table className="w-full text-sm min-w-[700px]">
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
                       <th className="px-4 py-3 w-12"></th>
@@ -419,8 +419,8 @@ export default function ImportDetail() {
         )}
 
         {/* Table */}
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <table className="w-full text-sm table-fixed">
+        <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+          <table className="w-full text-sm min-w-[700px]">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
                 <th className="px-4 py-3 w-12"></th>
@@ -542,7 +542,7 @@ export default function ImportDetail() {
                   <PackageMinus className="w-4 h-4 text-red-500" />
                   <span className="text-sm font-semibold text-red-700">Articles manquants en base ({compareResult.manquants.length})</span>
                 </div>
-                <table className="w-full text-sm table-fixed">
+                <table className="w-full text-sm min-w-[700px]">
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
                       <th className="w-8 px-3 py-2"><input type="checkbox" checked={selectedManquants.size === compareResult.manquants.length && compareResult.manquants.length > 0} onChange={() => toggleAllManquants(compareResult.manquants.length)} className="cursor-pointer" /></th>
@@ -573,7 +573,7 @@ export default function ImportDetail() {
                   <PackagePlus className="w-4 h-4 text-orange-500" />
                   <span className="text-sm font-semibold text-orange-700">Articles fantômes en base ({compareResult.fantomes.length})</span>
                 </div>
-                <table className="w-full text-sm table-fixed">
+                <table className="w-full text-sm min-w-[700px]">
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
                       <th className="text-left px-4 py-2 font-medium text-gray-600 w-24">Réf.</th>
@@ -608,7 +608,7 @@ export default function ImportDetail() {
                   <TrendingUp className="w-4 h-4 text-yellow-500" />
                   <span className="text-sm font-semibold text-yellow-700">Écarts de prix ({compareResult.ecarts_prix.length})</span>
                 </div>
-                <table className="w-full text-sm table-fixed">
+                <table className="w-full text-sm min-w-[700px]">
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
                       <th className="text-left px-4 py-2 font-medium text-gray-600 w-24">Réf.</th>
@@ -656,7 +656,7 @@ export default function ImportDetail() {
                   <TrendingUp className="w-4 h-4 text-blue-500" />
                   <span className="text-sm font-semibold text-blue-700">Prix négociés ({compareResult.prix_negocie.length})</span>
                 </div>
-                <table className="w-full text-sm table-fixed">
+                <table className="w-full text-sm min-w-[700px]">
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
                       <th className="text-left px-4 py-2 font-medium text-gray-600 w-24">Réf.</th>
