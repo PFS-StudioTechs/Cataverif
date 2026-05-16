@@ -68,6 +68,13 @@ export default function ImportDetail() {
   const [importing, setImporting] = useState(false)
   const [downloading, setDownloading] = useState(false)
   const [selectedManquants, setSelectedManquants] = useState<Set<number>>(new Set())
+  const [activeTab, setActiveTab] = useState<'import' | 'catalogue'>('import')
+  const [allProduits, setAllProduits] = useState<Produit[]>([])
+  const [loadingAll, setLoadingAll] = useState(false)
+  const [editIdAll, setEditIdAll] = useState<string | null>(null)
+  const [editDataAll, setEditDataAll] = useState<Partial<Produit>>({})
+  const [savingAll, setSavingAll] = useState(false)
+  const [filterAll, setFilterAll] = useState<'tous' | 'ia' | 'valide' | 'manuel'>('tous')
 
   const toggleManquant = (i: number) => setSelectedManquants(prev => {
     const n = new Set(prev); n.has(i) ? n.delete(i) : n.add(i); return n
@@ -80,6 +87,34 @@ export default function ImportDetail() {
     await supabase.from('produits').update({ actif: false }).eq('id', id)
     setCompareResult(prev => prev ? { ...prev, fantomes: prev.fantomes.filter(f => f.id !== id) } : prev)
   }
+
+  const loadAllProduits = async () => {
+    if (!imp) return
+    setLoadingAll(true)
+    const { data } = await supabase.from('produits')
+      .select('*')
+      .eq('fournisseur_id', imp.fournisseur_id)
+      .eq('actif', true)
+      .order('designation')
+    setAllProduits((data as Produit[]) ?? [])
+    setLoadingAll(false)
+  }
+
+  const saveEditAll = async () => {
+    if (!editIdAll) return
+    setSavingAll(true)
+    await supabase.from('produits').update({ ...editDataAll, updated_at: new Date().toISOString() }).eq('id', editIdAll)
+    setAllProduits(prev => prev.map(p => p.id === editIdAll ? { ...p, ...editDataAll } as Produit : p))
+    setEditIdAll(null)
+    setSavingAll(false)
+  }
+
+  const deleteFromAll = async (id: string) => {
+    if (!window.confirm('Supprimer cet article ?')) return
+    await supabase.from('produits').update({ actif: false }).eq('id', id)
+    setAllProduits(prev => prev.filter(p => p.id !== id))
+  }
+
   const [extractingImages, setExtractingImages] = useState(false)
   const [extractMsg, setExtractMsg] = useState<string | null>(null)
 
@@ -244,7 +279,84 @@ export default function ImportDetail() {
         )}
       </header>
 
+      <div className="bg-white border-b border-gray-200 px-6 flex gap-0">
+        <button onClick={() => setActiveTab('import')} className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === 'import' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+          Cet import
+        </button>
+        <button onClick={() => { setActiveTab('catalogue'); loadAllProduits(); }} className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === 'catalogue' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+          Base articles fournisseur
+        </button>
+      </div>
+
       <main className="max-w-6xl mx-auto px-6 py-6">
+        {activeTab === 'catalogue' && (
+          <div>
+            <div className="flex gap-2 mb-4">
+              {(['tous', 'ia', 'valide', 'manuel'] as const).map(k => (
+                <button key={k} onClick={() => setFilterAll(k)} className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${filterAll === k ? 'bg-blue-500 text-white border-blue-500' : 'bg-white border-gray-200 text-gray-600 hover:border-blue-300'}`}>
+                  {k === 'tous' ? `Tous (${allProduits.length})` : k === 'ia' ? `IA (${allProduits.filter(p => p.statut_import === 'ia').length})` : k === 'valide' ? `Validés (${allProduits.filter(p => p.statut_import === 'valide').length})` : `Manuels (${allProduits.filter(p => p.statut_import === 'manuel').length})`}
+                </button>
+              ))}
+            </div>
+            {loadingAll ? (
+              <div className="text-center py-10 text-gray-400">Chargement…</div>
+            ) : (
+              <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="text-left px-4 py-3 font-medium text-gray-600 w-24">Réf.</th>
+                      <th className="text-left px-4 py-3 font-medium text-gray-600">Désignation</th>
+                      <th className="text-left px-4 py-3 font-medium text-gray-600 w-20">Unité</th>
+                      <th className="text-right px-4 py-3 font-medium text-gray-600 w-28">PA HT (€)</th>
+                      <th className="text-left px-4 py-3 font-medium text-gray-600 w-36">Statut</th>
+                      <th className="px-4 py-3 w-20"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {allProduits.filter(p => filterAll === 'tous' || p.statut_import === filterAll).map(p => (
+                      <tr key={p.id} className="hover:bg-gray-50 transition-colors">
+                        {editIdAll === p.id ? (
+                          <>
+                            <td className="px-4 py-2"><input className="w-full border rounded px-2 py-1 text-xs font-mono" value={editDataAll.reference ?? ''} onChange={e => setEditDataAll(d => ({ ...d, reference: e.target.value || null }))} /></td>
+                            <td className="px-4 py-2"><input className="w-full border rounded px-2 py-1 text-xs" value={editDataAll.designation ?? ''} onChange={e => setEditDataAll(d => ({ ...d, designation: e.target.value }))} /></td>
+                            <td className="px-4 py-2"><input className="w-full border rounded px-2 py-1 text-xs" value={editDataAll.unite ?? ''} onChange={e => setEditDataAll(d => ({ ...d, unite: e.target.value }))} /></td>
+                            <td className="px-4 py-2"><input type="number" step="0.01" className="w-full border rounded px-2 py-1 text-xs text-right" value={editDataAll.prix_achat ?? 0} onChange={e => setEditDataAll(d => ({ ...d, prix_achat: parseFloat(e.target.value) }))} /></td>
+                            <td className="px-4 py-2 text-xs text-gray-400">{statutBadge(p.statut_import)}</td>
+                            <td className="px-4 py-2">
+                              <div className="flex gap-1 justify-end">
+                                <button onClick={saveEditAll} disabled={savingAll} className="text-green-600 hover:text-green-800"><Check className="w-4 h-4" /></button>
+                                <button onClick={() => setEditIdAll(null)} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
+                              </div>
+                            </td>
+                          </>
+                        ) : (
+                          <>
+                            <td className="px-4 py-3 font-mono text-xs text-gray-500">{p.reference ?? '—'}</td>
+                            <td className="px-4 py-3 text-gray-900">{p.designation}</td>
+                            <td className="px-4 py-3 text-gray-500">{p.unite}</td>
+                            <td className="px-4 py-3 text-right font-mono">{p.prix_achat.toFixed(2)}</td>
+                            <td className="px-4 py-3">{statutBadge(p.statut_import)}</td>
+                            <td className="px-4 py-3">
+                              <div className="flex gap-1 justify-end">
+                                <button onClick={() => { setEditIdAll(p.id); setEditDataAll({ reference: p.reference, designation: p.designation, unite: p.unite, prix_achat: p.prix_achat }) }} className="text-gray-300 hover:text-blue-500 transition-colors"><Pencil className="w-4 h-4" /></button>
+                                <button onClick={() => deleteFromAll(p.id)} className="text-gray-300 hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4" /></button>
+                              </div>
+                            </td>
+                          </>
+                        )}
+                      </tr>
+                    ))}
+                    {allProduits.length === 0 && (
+                      <tr><td colSpan={6} className="text-center py-10 text-gray-400">Aucun article</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+        {activeTab === 'import' && <>
         {/* Stats */}
         <div className="grid grid-cols-4 gap-3 mb-6">
           {(['tous', 'ia', 'valide', 'manuel'] as const).map(k => (
@@ -539,6 +651,7 @@ export default function ImportDetail() {
             )}
           </div>
         )}
+        </>}
       </main>
     </div>
   )
