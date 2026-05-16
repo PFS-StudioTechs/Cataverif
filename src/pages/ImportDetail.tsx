@@ -151,45 +151,18 @@ export default function ImportDetail() {
     setComparing(true)
     setCompareError(null)
     setCompareResult(null)
-    setCompareProgress(null)
+    setCompareProgress('Analyse en cours…')
 
     try {
-      if (imp.fichier_type !== 'pdf') {
-        const { data, error } = await supabase.functions.invoke('compare-catalogue', { body: { import_id: id } })
-        if (error) throw new Error(error.message)
-        if (!data || data.error) throw new Error(data?.error ?? 'Réponse vide')
-        setCompareResult(data as CompareResult)
-        return
-      }
-
-      setCompareProgress('Découpage du catalogue…')
-      const prepareRes = await supabase.functions.invoke('compare-catalogue', {
-        body: { import_id: id, mode: 'prepare' }
+      const { data: { session } } = await supabase.auth.getSession()
+      const resp = await fetch('/api/compare-catalogue', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ import_id: id }),
       })
-      if (prepareRes.error) throw new Error(prepareRes.error.message)
-      if (prepareRes.data?.error) throw new Error(prepareRes.data.error)
-
-      const { session_id, chunks, total_pages } = prepareRes.data
-      let allProduits: unknown[] = []
-
-      for (const chunk of chunks) {
-        setCompareProgress(`Pages ${chunk.page_start + 1}–${chunk.page_end} / ${total_pages}`)
-        await new Promise(r => setTimeout(r, 3000))
-        const res = await supabase.functions.invoke('compare-catalogue', {
-          body: { import_id: id, mode: 'extract', chunk_path: chunk.path }
-        })
-        if (res.error) throw new Error(res.error.message)
-        if (res.data?.error) throw new Error(res.data.error)
-        allProduits = [...allProduits, ...res.data.produits]
-      }
-
-      setCompareProgress('Comparaison en cours…')
-      const result = await supabase.functions.invoke('compare-catalogue', {
-        body: { import_id: id, mode: 'compare', produits_pdf: allProduits, session_id }
-      })
-      if (result.error) throw new Error(result.error.message)
-      if (result.data?.error) throw new Error(result.data.error)
-      setCompareResult(result.data as CompareResult)
+      const result = await resp.json()
+      if (!resp.ok || result.error) throw new Error(result.error ?? 'Erreur serveur')
+      setCompareResult(result as CompareResult)
     } catch (e) {
       setCompareError(e instanceof Error ? e.message : 'Erreur inconnue')
     } finally {
