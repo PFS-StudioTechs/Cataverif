@@ -106,10 +106,10 @@ def page_to_ordered_text(page) -> str:
 def extract_pdf(file_bytes: bytes, ai: anthropic.Anthropic) -> list:
     doc = fitz.open(stream=file_bytes, filetype="pdf")
     pages_text = []
-    for page in doc:
+    for page_num, page in enumerate(doc, start=1):
         text = page_to_ordered_text(page)
         if text:
-            pages_text.append(text)
+            pages_text.append((page_num, text))
     doc.close()
 
     if not pages_text:
@@ -117,7 +117,8 @@ def extract_pdf(file_bytes: bytes, ai: anthropic.Anthropic) -> list:
 
     produits = []
     for i in range(0, len(pages_text), PAGES_PER_CHUNK):
-        chunk = "\n\n---\n\n".join(pages_text[i:i + PAGES_PER_CHUNK])
+        chunk_pages = pages_text[i:i + PAGES_PER_CHUNK]
+        chunk = "\n\n---\n\n".join(f"=== PAGE {n} ===\n{t}" for n, t in chunk_pages)
         produits.extend(call_claude_text(chunk, ai))
 
     return deduplicate(produits)
@@ -125,10 +126,10 @@ def extract_pdf(file_bytes: bytes, ai: anthropic.Anthropic) -> list:
 
 def call_claude_text(text: str, ai: anthropic.Anthropic) -> list:
     prompt = f"""Extrais TOUS les produits de ce texte de catalogue fournisseur sans en omettre aucun.
-Pour chaque produit : référence article, désignation complète, unité de vente, prix HT en euros.
+Pour chaque produit : référence article, désignation complète, unité de vente, prix HT en euros, numéro de page.
 Réponds UNIQUEMENT en JSON compact sur une seule ligne, sans aucun texte avant ou après :
-{{"p":[{{"r":"ref_ou_null","d":"designation","u":"unite","pa":0.00}}]}}
-Règles : r=null si absent, u="u" si absente, pa=0 si absent.
+{{"p":[{{"r":"ref_ou_null","d":"designation","u":"unite","pa":0.00,"pg":1}}]}}
+Règles : r=null si absent, u="u" si absente, pa=0 si absent, pg=numéro de la section === PAGE N === où le produit apparaît.
 
 TEXTE DU CATALOGUE :
 {text}"""
@@ -233,11 +234,16 @@ def normalize(obj: dict) -> dict:
     except (ValueError, TypeError):
         pa = 0.0
     ref = obj.get("r") or obj.get("reference") or None
+    try:
+        pg = int(obj.get("pg") or obj.get("page") or 0)
+    except (ValueError, TypeError):
+        pg = 0
     return {
         "reference": str(ref).strip() if ref else None,
         "designation": str(obj.get("d") or obj.get("designation") or "").strip(),
         "unite": str(obj.get("u") or obj.get("unite") or "u").strip() or "u",
         "prix_achat": max(0.0, pa),
+        "page": pg if pg > 0 else None,
     }
 
 
@@ -288,6 +294,7 @@ def compare(produits_pdf: list, produits_db: list) -> dict:
                     "prix_pdf": p.get("prix_achat"),
                     "prix_db": d.get("prix_achat"),
                     "delta": round(delta, 2),
+                    "page": p.get("page"),
                 }
                 if d.get("prix_negocie"):
                     prix_negocie.append(ecart)

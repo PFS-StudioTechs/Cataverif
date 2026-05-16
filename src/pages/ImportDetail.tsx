@@ -12,6 +12,7 @@ type Produit = {
   actif: boolean
   statut_import: 'ia' | 'valide' | 'manuel'
   image_url: string | null
+  page?: number | null
 }
 
 type EcartPrix = {
@@ -22,6 +23,7 @@ type EcartPrix = {
   prix_pdf: number
   prix_db: number
   delta: number
+  page?: number | null
 }
 
 type CompareResult = {
@@ -524,6 +526,7 @@ export default function ImportDetail() {
                       <th className="text-left px-4 py-2 font-medium text-gray-600">Désignation</th>
                       <th className="text-left px-4 py-2 font-medium text-gray-600 w-20">Unité</th>
                       <th className="text-right px-4 py-2 font-medium text-gray-600 w-28">PA HT (€)</th>
+                      <th className="text-center px-4 py-2 font-medium text-gray-600 w-16">Page</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -534,6 +537,7 @@ export default function ImportDetail() {
                         <td className="px-4 py-2 text-gray-900">{p.designation}</td>
                         <td className="px-4 py-2 text-gray-500">{p.unite}</td>
                         <td className="px-4 py-2 text-right font-mono">{p.prix_achat.toFixed(2)}</td>
+                        <td className="px-4 py-2 text-center font-mono text-xs text-gray-400">{p.page ?? '—'}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -590,6 +594,7 @@ export default function ImportDetail() {
                       <th className="text-right px-4 py-2 font-medium text-gray-600 w-28">Prix PDF</th>
                       <th className="text-right px-4 py-2 font-medium text-gray-600 w-28">Prix DB</th>
                       <th className="text-right px-4 py-2 font-medium text-gray-600 w-24">Écart</th>
+                      <th className="text-center px-4 py-2 font-medium text-gray-600 w-16">Page</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -602,6 +607,7 @@ export default function ImportDetail() {
                         <td className={`px-4 py-2 text-right font-mono font-semibold ${e.delta > 0 ? 'text-red-600' : 'text-green-600'}`}>
                           {e.delta > 0 ? '+' : ''}{e.delta.toFixed(2)} €
                         </td>
+                        <td className="px-4 py-2 text-center font-mono text-xs text-gray-400">{e.page ?? '—'}</td>
                       </tr>
                     ))}
                   </tbody>
