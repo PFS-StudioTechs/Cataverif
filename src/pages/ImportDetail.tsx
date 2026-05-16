@@ -305,6 +305,7 @@ export default function ImportDetail() {
                 <table className="w-full text-sm">
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
+                      <th className="px-4 py-3 w-12"></th>
                       <th className="text-left px-4 py-3 font-medium text-gray-600 w-24">Réf.</th>
                       <th className="text-left px-4 py-3 font-medium text-gray-600">Désignation</th>
                       <th className="text-left px-4 py-3 font-medium text-gray-600 w-20">Unité</th>
@@ -318,6 +319,7 @@ export default function ImportDetail() {
                       <tr key={p.id} className="hover:bg-gray-50 transition-colors">
                         {editIdAll === p.id ? (
                           <>
+                            <td className="px-4 py-2" />
                             <td className="px-4 py-2"><input className="w-full border rounded px-2 py-1 text-xs font-mono" value={editDataAll.reference ?? ''} onChange={e => setEditDataAll(d => ({ ...d, reference: e.target.value || null }))} /></td>
                             <td className="px-4 py-2"><input className="w-full border rounded px-2 py-1 text-xs" value={editDataAll.designation ?? ''} onChange={e => setEditDataAll(d => ({ ...d, designation: e.target.value }))} /></td>
                             <td className="px-4 py-2"><input className="w-full border rounded px-2 py-1 text-xs" value={editDataAll.unite ?? ''} onChange={e => setEditDataAll(d => ({ ...d, unite: e.target.value }))} /></td>
@@ -332,6 +334,9 @@ export default function ImportDetail() {
                           </>
                         ) : (
                           <>
+                            <td className="px-4 py-3">
+                              {p.image_url && <a href={p.image_url} target="_blank" rel="noreferrer"><img src={p.image_url} alt="" className="w-8 h-8 object-cover rounded hover:opacity-80" /></a>}
+                            </td>
                             <td className="px-4 py-3 font-mono text-xs text-gray-500">{p.reference ?? '—'}</td>
                             <td className="px-4 py-3 text-gray-900">{p.designation}</td>
                             <td className="px-4 py-3 text-gray-500">{p.unite}</td>
