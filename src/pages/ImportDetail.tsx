@@ -69,9 +69,7 @@ export default function ImportDetail() {
   const [importing, setImporting] = useState(false)
   const [downloading, setDownloading] = useState(false)
   const [selectedManquants, setSelectedManquants] = useState<Set<number>>(new Set())
-  const [activeTab, setActiveTab] = useState<'import' | 'catalogue'>('import')
   const [allProduits, setAllProduits] = useState<Produit[]>([])
-  const [loadingAll, setLoadingAll] = useState(false)
   const [editIdAll, setEditIdAll] = useState<string | null>(null)
   const [editDataAll, setEditDataAll] = useState<Partial<Produit>>({})
   const [savingAll, setSavingAll] = useState(false)
@@ -89,17 +87,6 @@ export default function ImportDetail() {
     setCompareResult(prev => prev ? { ...prev, fantomes: prev.fantomes.filter(f => f.id !== id) } : prev)
   }
 
-  const loadAllProduits = async () => {
-    if (!imp) return
-    setLoadingAll(true)
-    const { data } = await supabase.from('produits')
-      .select('*')
-      .eq('fournisseur_id', imp.fournisseur_id)
-      .eq('actif', true)
-      .order('designation')
-    setAllProduits((data as Produit[]) ?? [])
-    setLoadingAll(false)
-  }
 
   const handleImageUploadAll = async (productId: string, file: File) => {
     const ext = file.name.split('.').pop()?.toLowerCase() ?? 'jpg'
@@ -130,14 +117,18 @@ export default function ImportDetail() {
 
   useEffect(() => {
     if (!id) return
-    Promise.all([
-      supabase.from('catalogue_imports').select('*, fournisseurs(nom)').eq('id', id).single(),
-      supabase.from('produits').select('*').eq('import_id', id).order('designation'),
-    ]).then(([impRes, prodsRes]) => {
-      setImp(impRes.data as Import)
-      setProduits((prodsRes.data as Produit[]) ?? [])
-      setLoading(false)
-    })
+    supabase.from('catalogue_imports').select('*, fournisseurs(nom)').eq('id', id).single()
+      .then(async (impRes) => {
+        const imp = impRes.data as Import
+        setImp(imp)
+        const [prodsRes, allProdsRes] = await Promise.all([
+          supabase.from('produits').select('*').eq('import_id', id).order('designation'),
+          supabase.from('produits').select('*').eq('fournisseur_id', imp.fournisseur_id).eq('actif', true).order('designation'),
+        ])
+        setProduits((prodsRes.data as Produit[]) ?? [])
+        setAllProduits((allProdsRes.data as Produit[]) ?? [])
+        setLoading(false)
+      })
   }, [id])
 
   const startEdit = (p: Produit) => {
@@ -332,18 +323,9 @@ export default function ImportDetail() {
         )}
       </header>
 
-      <div className="bg-white border-b border-gray-200 px-6 flex gap-0">
-        <button onClick={() => setActiveTab('import')} className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === 'import' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
-          Cet import
-        </button>
-        <button onClick={() => { setActiveTab('catalogue'); loadAllProduits(); }} className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === 'catalogue' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
-          Base articles fournisseur
-        </button>
-      </div>
-
       <main className="max-w-6xl mx-auto px-6 py-6">
-        {activeTab === 'catalogue' && (
-          <div>
+        <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">Base articles fournisseur</h2>
+        <div>
             <div className="flex gap-2 mb-4">
               {(['tous', 'ia', 'valide', 'manuel'] as const).map(k => (
                 <button key={k} onClick={() => setFilterAll(k)} className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${filterAll === k ? 'bg-blue-500 text-white border-blue-500' : 'bg-white border-gray-200 text-gray-600 hover:border-blue-300'}`}>
@@ -351,10 +333,7 @@ export default function ImportDetail() {
                 </button>
               ))}
             </div>
-            {loadingAll ? (
-              <div className="text-center py-10 text-gray-400">Chargement…</div>
-            ) : (
-              <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
                 <table className="w-full text-sm">
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
@@ -417,11 +396,12 @@ export default function ImportDetail() {
                     )}
                   </tbody>
                 </table>
-              </div>
-            )}
+            </div>
           </div>
-        )}
-        {activeTab === 'import' && <>
+        </div>
+
+        <div className="mt-8">
+        <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">Cet import</h2>
         {/* Stats */}
         <div className="grid grid-cols-4 gap-3 mb-6">
           {(['tous', 'ia', 'valide', 'manuel'] as const).map(k => (
@@ -716,7 +696,7 @@ export default function ImportDetail() {
             )}
           </div>
         )}
-        </>}
+        </div>
       </main>
     </div>
   )
