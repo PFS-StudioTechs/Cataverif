@@ -55,11 +55,23 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-gray-50" translate="no">
-      <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-2">
+      <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center gap-4">
+        <div className="flex items-center gap-2 flex-1">
           <PackageSearch className="w-6 h-6 text-blue-600" />
           <span className="font-bold text-gray-900 text-lg">Cataverif</span>
         </div>
+        <button
+          onClick={() => navigate('/')}
+          className="flex items-center gap-1.5 text-sm border border-blue-200 text-blue-700 rounded-lg px-4 py-2 hover:bg-blue-50 transition-colors font-medium"
+        >
+          <PackageSearch className="w-4 h-4" /> Imports à vérifier
+        </button>
+        <button
+          onClick={() => navigate('/articles')}
+          className="flex items-center gap-1.5 text-sm border border-gray-200 text-gray-700 rounded-lg px-4 py-2 hover:bg-gray-50 transition-colors font-medium"
+        >
+          Base articles
+        </button>
         <button
           onClick={() => signOut()}
           className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-900 transition-colors"

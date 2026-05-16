@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from '@/hooks/useAuth'
 import Auth from '@/pages/Auth'
 import Dashboard from '@/pages/Dashboard'
 import ImportDetail from '@/pages/ImportDetail'
+import Articles from '@/pages/Articles'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth()
@@ -19,6 +20,7 @@ export default function App() {
           <Route path="/auth" element={<Auth />} />
           <Route path="/" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
           <Route path="/import/:id" element={<PrivateRoute><ImportDetail /></PrivateRoute>} />
+          <Route path="/articles" element={<PrivateRoute><Articles /></PrivateRoute>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
