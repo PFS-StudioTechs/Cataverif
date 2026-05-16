@@ -398,7 +398,6 @@ export default function ImportDetail() {
                 </table>
             </div>
           </div>
-        </div>
 
         <div className="mt-8">
         <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">Cet import</h2>
