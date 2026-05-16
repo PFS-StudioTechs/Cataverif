@@ -114,12 +114,12 @@ export default function Imports() {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Fournisseur</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Fichier</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Statut</th>
-                  <th className="text-right px-4 py-3 font-medium text-gray-600">Produits</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Date</th>
-                  <th className="px-4 py-3"></th>
+                  <th className="text-center px-4 py-3 font-medium text-gray-600">Fournisseur</th>
+                  <th className="text-center px-4 py-3 font-medium text-gray-600 w-20">Fichier</th>
+                  <th className="text-center px-4 py-3 font-medium text-gray-600 w-36">Statut</th>
+                  <th className="text-center px-4 py-3 font-medium text-gray-600 w-24">Produits</th>
+                  <th className="text-center px-4 py-3 font-medium text-gray-600 w-44">Date</th>
+                  <th className="px-4 py-3 w-28"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -128,7 +128,7 @@ export default function Imports() {
                     <td className="px-4 py-3 font-medium text-gray-900">
                       {imp.fournisseurs?.nom ?? '—'}
                     </td>
-                    <td className="px-4 py-3 text-gray-500 font-mono text-xs">
+                    <td className="px-4 py-3 text-center text-gray-500 font-mono text-xs">
                       <span className="uppercase bg-gray-100 rounded px-1.5 py-0.5">{imp.fichier_type}</span>
                     </td>
                     <td className="px-4 py-3">
@@ -142,17 +142,17 @@ export default function Imports() {
                         <p className="text-xs text-red-500 mt-0.5 truncate max-w-xs">{imp.erreur_message}</p>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-right font-mono text-gray-700">
+                    <td className="px-4 py-3 text-center font-mono text-gray-700">
                       {imp.produits?.[0]?.count ?? imp.nb_produits_extraits ?? '—'}
                     </td>
-                    <td className="px-4 py-3 text-gray-500 text-xs">
+                    <td className="px-4 py-3 text-center text-gray-500 text-xs whitespace-nowrap">
                       {new Date(imp.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3 justify-end">
                         <button
                           onClick={() => navigate(`/import/${imp.id}`)}
-                          className="text-blue-600 hover:text-blue-800 text-xs font-medium"
+                          className="text-blue-600 hover:text-blue-800 text-xs font-medium whitespace-nowrap"
                         >
                           Vérifier →
                         </button>

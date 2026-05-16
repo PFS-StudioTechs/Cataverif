@@ -100,6 +100,15 @@ export default function ImportDetail() {
     setLoadingAll(false)
   }
 
+  const handleImageUploadAll = async (productId: string, file: File) => {
+    const ext = file.name.split('.').pop()?.toLowerCase() ?? 'jpg'
+    const path = `product-images/manual/${productId}.${ext}`
+    const { error } = await supabase.storage.from('artisan-documents').upload(path, file, { upsert: true })
+    if (error) return
+    const { data } = supabase.storage.from('artisan-documents').getPublicUrl(path)
+    setEditDataAll(d => ({ ...d, image_url: data.publicUrl }))
+  }
+
   const saveEditAll = async () => {
     if (!editIdAll) return
     setSavingAll(true)
@@ -319,7 +328,14 @@ export default function ImportDetail() {
                       <tr key={p.id} className="hover:bg-gray-50 transition-colors">
                         {editIdAll === p.id ? (
                           <>
-                            <td className="px-4 py-2" />
+                            <td className="px-4 py-2">
+                              <label className="cursor-pointer block">
+                                {editDataAll.image_url
+                                  ? <img src={editDataAll.image_url} alt="" className="w-8 h-8 object-cover rounded hover:opacity-70" />
+                                  : <div className="w-8 h-8 border-2 border-dashed border-gray-300 rounded flex items-center justify-center text-gray-400 text-xs hover:border-blue-400">+</div>}
+                                <input type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleImageUploadAll(p.id, f) }} />
+                              </label>
+                            </td>
                             <td className="px-4 py-2"><input className="w-full border rounded px-2 py-1 text-xs font-mono" value={editDataAll.reference ?? ''} onChange={e => setEditDataAll(d => ({ ...d, reference: e.target.value || null }))} /></td>
                             <td className="px-4 py-2"><input className="w-full border rounded px-2 py-1 text-xs" value={editDataAll.designation ?? ''} onChange={e => setEditDataAll(d => ({ ...d, designation: e.target.value }))} /></td>
                             <td className="px-4 py-2"><input className="w-full border rounded px-2 py-1 text-xs" value={editDataAll.unite ?? ''} onChange={e => setEditDataAll(d => ({ ...d, unite: e.target.value }))} /></td>
@@ -344,7 +360,7 @@ export default function ImportDetail() {
                             <td className="px-4 py-3">{statutBadge(p.statut_import)}</td>
                             <td className="px-4 py-3">
                               <div className="flex gap-1 justify-end">
-                                <button onClick={() => { setEditIdAll(p.id); setEditDataAll({ reference: p.reference, designation: p.designation, unite: p.unite, prix_achat: p.prix_achat }) }} className="text-gray-300 hover:text-blue-500 transition-colors"><Pencil className="w-4 h-4" /></button>
+                                <button onClick={() => { setEditIdAll(p.id); setEditDataAll({ reference: p.reference, designation: p.designation, unite: p.unite, prix_achat: p.prix_achat, image_url: p.image_url }) }} className="text-gray-300 hover:text-blue-500 transition-colors"><Pencil className="w-4 h-4" /></button>
                                 <button onClick={() => deleteFromAll(p.id)} className="text-gray-300 hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4" /></button>
                               </div>
                             </td>
