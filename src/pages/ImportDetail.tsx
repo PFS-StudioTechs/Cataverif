@@ -336,7 +336,7 @@ export default function ImportDetail() {
                       <th className="text-left px-4 py-3 font-medium text-gray-600 w-24">Réf.</th>
                       <th className="text-left px-4 py-3 font-medium text-gray-600">Désignation</th>
                       <th className="text-left px-4 py-3 font-medium text-gray-600 w-20">Unité</th>
-                      <th className="text-right px-4 py-3 font-medium text-gray-600 w-28">PA HT (€)</th>
+                      <th className="text-left px-4 py-3 font-medium text-gray-600 w-28">PA HT (€)</th>
                       <th className="text-left px-4 py-3 font-medium text-gray-600 w-36">Statut</th>
                       <th className="px-4 py-3 w-20"></th>
                     </tr>
@@ -427,7 +427,7 @@ export default function ImportDetail() {
                 <th className="text-left px-4 py-3 font-medium text-gray-600 w-24">Réf.</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Désignation</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600 w-20">Unité</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-600 w-28">PA HT (€)</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600 w-28">PA HT (€)</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600 w-36">Statut</th>
                 <th className="px-4 py-3 w-20"></th>
               </tr>
