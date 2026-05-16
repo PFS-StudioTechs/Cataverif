@@ -35,14 +35,8 @@ export default function Dashboard() {
   const navigate = useNavigate()
 
   const deleteImport = async (imp: Import) => {
-    const nbProduits = imp.produits?.[0]?.count ?? 0
-    const msg = nbProduits > 0
-      ? `Cet import contient ${nbProduits} produit(s) en base. Supprimer quand même ?`
-      : `Supprimer cet import ${imp.fournisseurs?.nom ?? ''} ?`
+    const msg = `Supprimer cet import ${imp.fournisseurs?.nom ?? ''} ?`
     if (!window.confirm(msg)) return
-    if (nbProduits > 0) {
-      await supabase.from('produits').delete().eq('import_id', imp.id)
-    }
     await supabase.from('catalogue_imports').delete().eq('id', imp.id)
     setImports(prev => prev.filter(i => i.id !== imp.id))
   }
