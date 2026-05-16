@@ -67,6 +67,14 @@ export default function ImportDetail() {
   const [compareError, setCompareError] = useState<string | null>(null)
   const [importing, setImporting] = useState(false)
   const [downloading, setDownloading] = useState(false)
+  const [selectedManquants, setSelectedManquants] = useState<Set<number>>(new Set())
+
+  const toggleManquant = (i: number) => setSelectedManquants(prev => {
+    const n = new Set(prev); n.has(i) ? n.delete(i) : n.add(i); return n
+  })
+  const toggleAllManquants = (total: number) => setSelectedManquants(prev =>
+    prev.size === total ? new Set() : new Set(Array.from({ length: total }, (_, i) => i))
+  )
 
   const deleteFantome = async (id: string) => {
     await supabase.from('produits').update({ actif: false }).eq('id', id)
@@ -143,10 +151,13 @@ export default function ImportDetail() {
     a.click()
   }
 
-  const importerManquants = async () => {
+  const importerManquants = async (indices?: Set<number>) => {
     if (!compareResult || !imp) return
     setImporting(true)
-    const rows = compareResult.manquants.map(p => ({
+    const toImport = indices && indices.size > 0
+      ? compareResult.manquants.filter((_, i) => indices.has(i))
+      : compareResult.manquants
+    const rows = toImport.map(p => ({
       artisan_id: imp.artisan_id,
       fournisseur_id: imp.fournisseur_id,
       import_id: id,
@@ -159,13 +170,14 @@ export default function ImportDetail() {
     if (rows.length > 0) {
       await supabase.from('produits').insert(rows)
     }
-    await supabase.from('produits').update({ statut_import: 'valide', updated_at: new Date().toISOString() }).eq('import_id', id)
-    const { data } = await supabase.from('produits').select('*').eq('import_id', id).order('designation')
-    const newList = (data as Produit[]) ?? []
-    setProduits(newList)
-    await supabase.from('catalogue_imports').update({ nb_produits_extraits: newList.length }).eq('id', id)
-    setImp(prev => prev ? { ...prev, nb_produits_extraits: newList.length } : prev)
-    setCompareResult(null)
+    const importedIndices = indices && indices.size > 0 ? indices : null
+    setCompareResult(prev => prev ? {
+      ...prev,
+      manquants: importedIndices
+        ? prev.manquants.filter((_, i) => !importedIndices.has(i))
+        : []
+    } : prev)
+    setSelectedManquants(new Set())
     setImporting(false)
   }
 
@@ -383,6 +395,7 @@ export default function ImportDetail() {
                 <table className="w-full text-sm">
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
+                      <th className="w-8 px-3 py-2"><input type="checkbox" checked={selectedManquants.size === compareResult.manquants.length && compareResult.manquants.length > 0} onChange={() => toggleAllManquants(compareResult.manquants.length)} className="cursor-pointer" /></th>
                       <th className="text-left px-4 py-2 font-medium text-gray-600 w-24">Réf.</th>
                       <th className="text-left px-4 py-2 font-medium text-gray-600">Désignation</th>
                       <th className="text-left px-4 py-2 font-medium text-gray-600 w-20">Unité</th>
@@ -391,7 +404,8 @@ export default function ImportDetail() {
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {compareResult.manquants.map((p, i) => (
-                      <tr key={i} className="bg-red-50/50">
+                      <tr key={i} className={selectedManquants.has(i) ? "bg-red-100" : "bg-red-50/50"}>
+                        <td className="px-3 py-2"><input type="checkbox" checked={selectedManquants.has(i)} onChange={() => toggleManquant(i)} className="cursor-pointer" /></td>
                         <td className="px-4 py-2 font-mono text-xs text-gray-500">{p.reference ?? '—'}</td>
                         <td className="px-4 py-2 text-gray-900">{p.designation}</td>
                         <td className="px-4 py-2 text-gray-500">{p.unite}</td>
@@ -472,14 +486,18 @@ export default function ImportDetail() {
             )}
 
             {compareResult.manquants.length > 0 && (
-              <button
-                onClick={importerManquants}
-                disabled={importing}
-                className="flex items-center gap-2 bg-red-600 text-white rounded-lg px-4 py-2 text-sm hover:bg-red-700 transition-colors disabled:opacity-50"
-              >
-                <PackageMinus className="w-4 h-4" />
-                {importing ? 'Import en cours…' : `Importer les ${compareResult.manquants.length} manquants + valider tout`}
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => importerManquants(selectedManquants.size > 0 ? selectedManquants : undefined)}
+                  disabled={importing}
+                  className="flex items-center gap-2 bg-red-600 text-white rounded-lg px-4 py-2 text-sm hover:bg-red-700 transition-colors disabled:opacity-50"
+                >
+                  <PackageMinus className="w-4 h-4" />
+                  {importing ? 'Import en cours…' : selectedManquants.size > 0
+                    ? `Importer les ${selectedManquants.size} sélectionnés`
+                    : `Importer les ${compareResult.manquants.length} manquants`}
+                </button>
+              </div>
             )}
 
             {(compareResult.prix_negocie?.length ?? 0) > 0 && (
