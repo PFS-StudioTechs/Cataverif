@@ -63,6 +63,7 @@ export default function ImportDetail() {
   const [editData, setEditData] = useState<Partial<Produit>>({})
   const [saving, setSaving] = useState(false)
   const [comparing, setComparing] = useState(false)
+  const [compareProgress, setCompareProgress] = useState<string | null>(null)
   const [compareResult, setCompareResult] = useState<CompareResult | null>(null)
   const [compareError, setCompareError] = useState<string | null>(null)
   const [importing, setImporting] = useState(false)
@@ -155,15 +156,58 @@ export default function ImportDetail() {
   }
 
   const runCompare = async () => {
+    if (!imp) return
     setComparing(true)
     setCompareError(null)
     setCompareResult(null)
-    const { data, error } = await supabase.functions.invoke('compare-catalogue', { body: { import_id: id } })
-    setComparing(false)
-    if (error) { setCompareError(`Erreur fonction: ${error.message}`); return }
-    if (!data) { setCompareError('Réponse vide — vérifier les logs Supabase Edge Functions'); return }
-    if (data.error) { setCompareError(`Erreur serveur: ${data.error}`); return }
-    setCompareResult(data as CompareResult)
+    setCompareProgress(null)
+
+    try {
+      if (imp.fichier_type !== 'pdf') {
+        const { data, error } = await supabase.functions.invoke('compare-catalogue', { body: { import_id: id } })
+        if (error) throw new Error(error.message)
+        if (!data || data.error) throw new Error(data?.error ?? 'Réponse vide')
+        setCompareResult(data as CompareResult)
+        return
+      }
+
+      const CHUNK = 20
+      let allProduits: unknown[] = []
+      let total_pages = 0
+
+      const first = await supabase.functions.invoke('compare-catalogue', {
+        body: { import_id: id, mode: 'extract', page_start: 0, page_end: CHUNK }
+      })
+      if (first.error) throw new Error(first.error.message)
+      if (first.data?.error) throw new Error(first.data.error)
+      total_pages = first.data.total_pages
+      allProduits = [...first.data.produits]
+      setCompareProgress(`Pages 1–${Math.min(CHUNK, total_pages)} / ${total_pages}`)
+
+      for (let start = CHUNK; start < total_pages; start += CHUNK) {
+        const end = Math.min(start + CHUNK, total_pages)
+        setCompareProgress(`Pages ${start + 1}–${end} / ${total_pages}`)
+        const chunk = await supabase.functions.invoke('compare-catalogue', {
+          body: { import_id: id, mode: 'extract', page_start: start, page_end: end }
+        })
+        if (chunk.error) throw new Error(chunk.error.message)
+        if (chunk.data?.error) throw new Error(chunk.data.error)
+        allProduits = [...allProduits, ...chunk.data.produits]
+      }
+
+      setCompareProgress('Comparaison en cours…')
+      const result = await supabase.functions.invoke('compare-catalogue', {
+        body: { import_id: id, mode: 'compare', produits_pdf: allProduits }
+      })
+      if (result.error) throw new Error(result.error.message)
+      if (result.data?.error) throw new Error(result.data.error)
+      setCompareResult(result.data as CompareResult)
+    } catch (e) {
+      setCompareError(e instanceof Error ? e.message : 'Erreur inconnue')
+    } finally {
+      setComparing(false)
+      setCompareProgress(null)
+    }
   }
 
   const extractImages = async () => {
@@ -276,7 +320,7 @@ export default function ImportDetail() {
           className="flex items-center gap-1.5 text-sm border border-blue-300 text-blue-700 rounded-lg px-4 py-2 hover:bg-blue-50 transition-colors"
         >
           <GitCompare className={`w-4 h-4 ${comparing ? 'animate-spin' : ''}`} />
-          <span>{comparing ? 'Analyse en cours…' : 'Comparer avec fichier source'}</span>
+          <span>{compareProgress ?? (comparing ? 'Analyse en cours…' : 'Comparer avec fichier source')}</span>
         </button>
         {counts.ia > 0 && (
           <button
