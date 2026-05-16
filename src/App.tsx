@@ -1,7 +1,8 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from '@/hooks/useAuth'
 import Auth from '@/pages/Auth'
-import Dashboard from '@/pages/Dashboard'
+import Home from '@/pages/Home'
+import Imports from '@/pages/Imports'
 import ImportDetail from '@/pages/ImportDetail'
 import Articles from '@/pages/Articles'
 
@@ -18,7 +19,8 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/auth" element={<Auth />} />
-          <Route path="/" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
+          <Route path="/" element={<PrivateRoute><Home /></PrivateRoute>} />
+          <Route path="/imports" element={<PrivateRoute><Imports /></PrivateRoute>} />
           <Route path="/import/:id" element={<PrivateRoute><ImportDetail /></PrivateRoute>} />
           <Route path="/articles" element={<PrivateRoute><Articles /></PrivateRoute>} />
           <Route path="*" element={<Navigate to="/" replace />} />
