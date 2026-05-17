@@ -250,7 +250,7 @@ export default function ImportDetail() {
         body: JSON.stringify({ import_id: id }),
       })
       const result = await resp.json()
-      if (!resp.ok || result.error) throw new Error(result.error ?? 'Erreur serveur')
+      if (!resp.ok || result.error) throw new Error(typeof result.error === 'string' ? result.error : (result.error?.message ?? JSON.stringify(result.error) ?? 'Erreur serveur'))
       setCompareResult(result as CompareResult)
     } catch (e) {
       setCompareError(e instanceof Error ? e.message : 'Erreur inconnue')
