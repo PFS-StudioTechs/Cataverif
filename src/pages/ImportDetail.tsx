@@ -76,6 +76,8 @@ export default function ImportDetail() {
   const [editDataAll, setEditDataAll] = useState<Partial<Produit>>({})
   const [savingAll, setSavingAll] = useState(false)
   const [filterAll, setFilterAll] = useState<'tous' | 'ia' | 'valide' | 'manuel'>('tous')
+  const [sortManquantsCol, setSortManquantsCol] = useState<'reference' | 'designation' | 'unite' | 'prix_achat' | 'page' | null>(null)
+  const [sortManquantsDir, setSortManquantsDir] = useState<'asc' | 'desc'>('asc')
 
   const toggleManquant = (i: number) => setSelectedManquants(prev => {
     const n = new Set(prev); n.has(i) ? n.delete(i) : n.add(i); return n
@@ -83,6 +85,39 @@ export default function ImportDetail() {
   const toggleAllManquants = (total: number) => setSelectedManquants(prev =>
     prev.size === total ? new Set() : new Set(Array.from({ length: total }, (_, i) => i))
   )
+
+  const toggleSortManquants = (col: 'reference' | 'designation' | 'unite' | 'prix_achat' | 'page') => {
+    if (sortManquantsCol === col) setSortManquantsDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortManquantsCol(col); setSortManquantsDir('asc') }
+  }
+
+  const shiftSelectedManquants = (removedIdx: number) => setSelectedManquants(prev => {
+    const n = new Set<number>()
+    prev.forEach(idx => { if (idx < removedIdx) n.add(idx); else if (idx > removedIdx) n.add(idx - 1) })
+    return n
+  })
+
+  const validerManquant = async (origIdx: number) => {
+    if (!compareResult || !imp) return
+    const p = compareResult.manquants[origIdx]
+    await supabase.from('produits').insert({
+      artisan_id: imp.artisan_id,
+      fournisseur_id: imp.fournisseur_id,
+      import_id: id,
+      reference: p.reference,
+      designation: p.designation,
+      unite: p.unite,
+      prix_achat: p.prix_achat,
+      statut_import: 'valide',
+    })
+    setCompareResult(prev => prev ? { ...prev, manquants: prev.manquants.filter((_, j) => j !== origIdx) } : prev)
+    shiftSelectedManquants(origIdx)
+  }
+
+  const supprimerManquant = (origIdx: number) => {
+    setCompareResult(prev => prev ? { ...prev, manquants: prev.manquants.filter((_, j) => j !== origIdx) } : prev)
+    shiftSelectedManquants(origIdx)
+  }
 
   const deleteFantome = async (id: string) => {
     await supabase.from('produits').update({ actif: false }).eq('id', id)
@@ -246,6 +281,23 @@ export default function ImportDetail() {
     valide: produits.filter(p => p.statut_import === 'valide').length,
     manuel: produits.filter(p => p.statut_import === 'manuel').length,
   }
+
+  const sortedManquantsIndices: number[] = compareResult?.manquants
+    ? compareResult.manquants.map((_, i) => i).sort((a, b) => {
+        if (!sortManquantsCol) return 0
+        const pa = compareResult.manquants[a]
+        const pb = compareResult.manquants[b]
+        let va: string | number = ''
+        let vb: string | number = ''
+        if (sortManquantsCol === 'prix_achat') { va = pa.prix_achat; vb = pb.prix_achat }
+        else if (sortManquantsCol === 'page') { va = pa.page ?? 0; vb = pb.page ?? 0 }
+        else if (sortManquantsCol === 'reference') { va = pa.reference ?? ''; vb = pb.reference ?? '' }
+        else if (sortManquantsCol === 'designation') { va = pa.designation; vb = pb.designation }
+        else if (sortManquantsCol === 'unite') { va = pa.unite; vb = pb.unite }
+        if (typeof va === 'number' && typeof vb === 'number') return sortManquantsDir === 'asc' ? va - vb : vb - va
+        return sortManquantsDir === 'asc' ? String(va).localeCompare(String(vb)) : String(vb).localeCompare(String(va))
+      })
+    : []
 
   if (loading) return <div className="min-h-screen flex items-center justify-center text-gray-400">Chargement…</div>
   if (!imp) return <div className="min-h-screen flex items-center justify-center text-red-500">Import introuvable</div>
@@ -522,24 +574,34 @@ export default function ImportDetail() {
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
                       <th className="w-8 px-3 py-2"><input type="checkbox" checked={selectedManquants.size === compareResult.manquants.length && compareResult.manquants.length > 0} onChange={() => toggleAllManquants(compareResult.manquants.length)} className="cursor-pointer" /></th>
-                      <th className="text-left px-4 py-2 font-medium text-gray-600 w-24">Réf.</th>
-                      <th className="text-left px-4 py-2 font-medium text-gray-600">Désignation</th>
-                      <th className="text-left px-4 py-2 font-medium text-gray-600 w-20">Unité</th>
-                      <th className="text-right px-4 py-2 font-medium text-gray-600 w-28">PA HT (€)</th>
-                      <th className="text-center px-4 py-2 font-medium text-gray-600 w-16">Page</th>
+                      <th className="text-left px-4 py-2 font-medium text-gray-600 w-24 cursor-pointer select-none hover:bg-gray-100" onClick={() => toggleSortManquants('reference')}>Réf. {sortManquantsCol === 'reference' ? (sortManquantsDir === 'asc' ? '↑' : '↓') : '⇅'}</th>
+                      <th className="text-left px-4 py-2 font-medium text-gray-600 cursor-pointer select-none hover:bg-gray-100" onClick={() => toggleSortManquants('designation')}>Désignation {sortManquantsCol === 'designation' ? (sortManquantsDir === 'asc' ? '↑' : '↓') : '⇅'}</th>
+                      <th className="text-left px-4 py-2 font-medium text-gray-600 w-20 cursor-pointer select-none hover:bg-gray-100" onClick={() => toggleSortManquants('unite')}>Unité {sortManquantsCol === 'unite' ? (sortManquantsDir === 'asc' ? '↑' : '↓') : '⇅'}</th>
+                      <th className="text-right px-4 py-2 font-medium text-gray-600 w-28 cursor-pointer select-none hover:bg-gray-100" onClick={() => toggleSortManquants('prix_achat')}>PA HT (€) {sortManquantsCol === 'prix_achat' ? (sortManquantsDir === 'asc' ? '↑' : '↓') : '⇅'}</th>
+                      <th className="text-center px-4 py-2 font-medium text-gray-600 w-16 cursor-pointer select-none hover:bg-gray-100" onClick={() => toggleSortManquants('page')}>Page {sortManquantsCol === 'page' ? (sortManquantsDir === 'asc' ? '↑' : '↓') : '⇅'}</th>
+                      <th className="w-24" />
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
-                    {compareResult.manquants.map((p, i) => (
-                      <tr key={i} className={selectedManquants.has(i) ? "bg-red-100" : "bg-red-50/50"}>
-                        <td className="px-3 py-2"><input type="checkbox" checked={selectedManquants.has(i)} onChange={() => toggleManquant(i)} className="cursor-pointer" /></td>
-                        <td className="px-4 py-2 font-mono text-xs text-gray-500">{p.reference ?? '—'}</td>
-                        <td className="px-4 py-2 text-gray-900">{p.designation}</td>
-                        <td className="px-4 py-2 text-gray-500">{p.unite}</td>
-                        <td className="px-4 py-2 text-right font-mono">{p.prix_achat.toFixed(2)}</td>
-                        <td className="px-4 py-2 text-center font-mono text-xs text-gray-400">{p.page ?? '—'}</td>
-                      </tr>
-                    ))}
+                    {sortedManquantsIndices.map(origIdx => {
+                      const p = compareResult.manquants[origIdx]
+                      return (
+                        <tr key={origIdx} className={selectedManquants.has(origIdx) ? "bg-red-100" : "bg-red-50/50"}>
+                          <td className="px-3 py-2"><input type="checkbox" checked={selectedManquants.has(origIdx)} onChange={() => toggleManquant(origIdx)} className="cursor-pointer" /></td>
+                          <td className="px-4 py-2 font-mono text-xs text-gray-500">{p.reference ?? '—'}</td>
+                          <td className="px-4 py-2 text-gray-900">{p.designation}</td>
+                          <td className="px-4 py-2 text-gray-500">{p.unite}</td>
+                          <td className="px-4 py-2 text-right font-mono">{p.prix_achat.toFixed(2)}</td>
+                          <td className="px-4 py-2 text-center font-mono text-xs text-gray-400">{p.page ?? '—'}</td>
+                          <td className="px-2 py-1.5">
+                            <div className="flex gap-1 justify-end">
+                              <button onClick={() => validerManquant(origIdx)} className="px-2 py-1 rounded text-xs font-medium bg-green-100 text-green-700 hover:bg-green-200 transition-colors">Valider</button>
+                              <button onClick={() => supprimerManquant(origIdx)} className="p-1 rounded hover:bg-red-100 text-red-400 hover:text-red-600 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>
