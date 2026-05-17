@@ -209,8 +209,16 @@ export default function ImportDetail() {
         setProduits((prodsRes.data as Produit[]) ?? [])
         setAllProduits((allProdsRes.data as Produit[]) ?? [])
         setLoading(false)
+        const saved = localStorage.getItem(`cataverif-compare-${id}`)
+        if (saved) { try { setCompareResult(JSON.parse(saved)) } catch {} }
       })
   }, [id])
+
+  useEffect(() => {
+    if (!id) return
+    if (compareResult) localStorage.setItem(`cataverif-compare-${id}`, JSON.stringify(compareResult))
+    else localStorage.removeItem(`cataverif-compare-${id}`)
+  }, [compareResult, id])
 
   const startEdit = (p: Produit) => {
     setEditId(p.id)
