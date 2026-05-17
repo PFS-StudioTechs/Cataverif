@@ -82,6 +82,12 @@ class handler(BaseHTTPRequestHandler):
 
 
 def page_to_ordered_text(page) -> str:
+    blocks = page.get_text("blocks")
+    text_blocks = [(b[0], b[1], b[4].strip()) for b in blocks if b[6] == 0 and b[4].strip()]
+    if text_blocks:
+        text_blocks.sort(key=lambda b: (b[1], b[0]))
+        return "\n\n".join(t for _, _, t in text_blocks)
+
     words = page.get_text("words")
     if not words:
         return ""

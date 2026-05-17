@@ -81,7 +81,7 @@ export default function Articles() {
 
   const deleteProduit = async (id: string) => {
     if (!window.confirm('Supprimer cet article ?')) return
-    await supabase.from('produits').update({ actif: false }).eq('id', id)
+    await supabase.from('produits').delete().eq('id', id)
     setProduits(prev => prev.filter(p => p.id !== id))
     setSelected(prev => { const n = new Set(prev); n.delete(id); return n })
   }
@@ -89,7 +89,7 @@ export default function Articles() {
   const deleteSelected = async () => {
     if (!window.confirm(`Supprimer ${selected.size} article(s) ?`)) return
     const ids = [...selected]
-    for (const id of ids) await supabase.from('produits').update({ actif: false }).eq('id', id)
+    for (const id of ids) await supabase.from('produits').delete().eq('id', id)
     setProduits(prev => prev.filter(p => !selected.has(p.id)))
     setSelected(new Set())
   }
