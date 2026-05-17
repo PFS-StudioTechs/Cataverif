@@ -205,7 +205,7 @@ export default function Articles() {
                 <input value={newData.unite} onChange={e => setNewData(d => ({ ...d, unite: e.target.value }))} className="h-7 text-xs border border-gray-200 rounded px-2 w-16" placeholder="u" />
               </div>
               <div className="flex flex-col gap-1">
-                <span className="text-xs text-gray-500">PA HT (€)</span>
+                <span className="text-xs text-gray-500">Prix Catalogue HT (€)</span>
                 <input type="number" min="0" step="0.01" value={newData.prix_achat} onChange={e => setNewData(d => ({ ...d, prix_achat: parseFloat(e.target.value) || 0 }))} className="h-7 text-xs border border-gray-200 rounded px-2 text-right w-28" />
               </div>
               <button onClick={addProduit} disabled={adding || !newData.fournisseur_id || !newData.designation.trim()} className="h-7 text-xs px-3 flex items-center gap-1 bg-blue-600 hover:bg-blue-700 text-white rounded disabled:opacity-50 disabled:cursor-not-allowed">
@@ -226,7 +226,7 @@ export default function Articles() {
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
                   <th className="w-8 px-3 py-3"><input type="checkbox" checked={filtered.length > 0 && filtered.every(p => selected.has(p.id))} onChange={() => toggleAll(filtered.map(p => p.id))} className="cursor-pointer" /></th>
-                  {([['fournisseur','Fournisseur','w-32','left'],['reference','Réf.','w-24','left'],['designation','Désignation','','left'],['unite','Unité','w-20','left'],['prix_achat','PA HT (€)','w-28','right'],['statut_import','Statut','w-24','left']] as [SortField,string,string,string][]).map(([f,label,w,align]) => (
+                  {([['fournisseur','Fournisseur','w-32','left'],['reference','Réf.','w-24','left'],['designation','Désignation','','left'],['unite','Unité','w-20','left'],['prix_achat','Prix Catalogue HT (€)','w-28','right'],['statut_import','Statut','w-24','left']] as [SortField,string,string,string][]).map(([f,label,w,align]) => (
                     <th key={f} onClick={() => toggleSort(f)} className={`px-4 py-3 font-medium text-gray-600 cursor-pointer hover:bg-gray-100 select-none ${w} text-${align}`}>
                       {label}<SortIcon field={f} />
                     </th>

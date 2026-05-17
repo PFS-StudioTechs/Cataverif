@@ -364,7 +364,7 @@ export default function ImportDetail() {
                       <th className="text-left px-4 py-3 font-medium text-gray-600 w-24">Réf.</th>
                       <th className="text-left px-4 py-3 font-medium text-gray-600">Désignation</th>
                       <th className="text-left px-4 py-3 font-medium text-gray-600 w-20">Unité</th>
-                      <th className="text-left px-4 py-3 font-medium text-gray-600 w-28">PA HT (€)</th>
+                      <th className="text-left px-4 py-3 font-medium text-gray-600 w-28">Prix Catalogue HT (€)</th>
                       <th className="text-left px-4 py-3 font-medium text-gray-600 w-36">Statut</th>
                       <th className="px-4 py-3 w-20"></th>
                     </tr>
@@ -455,7 +455,7 @@ export default function ImportDetail() {
                 <th className="text-left px-4 py-3 font-medium text-gray-600 w-24">Réf.</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Désignation</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600 w-20">Unité</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600 w-28">PA HT (€)</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600 w-28">Prix Catalogue HT (€)</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600 w-36">Statut</th>
                 <th className="px-4 py-3 w-20"></th>
               </tr>
@@ -577,7 +577,7 @@ export default function ImportDetail() {
                       <th className="text-left px-4 py-2 font-medium text-gray-600 w-24 cursor-pointer select-none hover:bg-gray-100" onClick={() => toggleSortManquants('reference')}>Réf. {sortManquantsCol === 'reference' ? (sortManquantsDir === 'asc' ? '↑' : '↓') : '⇅'}</th>
                       <th className="text-left px-4 py-2 font-medium text-gray-600 cursor-pointer select-none hover:bg-gray-100" onClick={() => toggleSortManquants('designation')}>Désignation {sortManquantsCol === 'designation' ? (sortManquantsDir === 'asc' ? '↑' : '↓') : '⇅'}</th>
                       <th className="text-left px-4 py-2 font-medium text-gray-600 w-20 cursor-pointer select-none hover:bg-gray-100" onClick={() => toggleSortManquants('unite')}>Unité {sortManquantsCol === 'unite' ? (sortManquantsDir === 'asc' ? '↑' : '↓') : '⇅'}</th>
-                      <th className="text-right px-4 py-2 font-medium text-gray-600 w-28 cursor-pointer select-none hover:bg-gray-100" onClick={() => toggleSortManquants('prix_achat')}>PA HT (€) {sortManquantsCol === 'prix_achat' ? (sortManquantsDir === 'asc' ? '↑' : '↓') : '⇅'}</th>
+                      <th className="text-right px-4 py-2 font-medium text-gray-600 w-28 cursor-pointer select-none hover:bg-gray-100" onClick={() => toggleSortManquants('prix_achat')}>Prix Catalogue HT (€) {sortManquantsCol === 'prix_achat' ? (sortManquantsDir === 'asc' ? '↑' : '↓') : '⇅'}</th>
                       <th className="text-center px-4 py-2 font-medium text-gray-600 w-16 cursor-pointer select-none hover:bg-gray-100" onClick={() => toggleSortManquants('page')}>Page {sortManquantsCol === 'page' ? (sortManquantsDir === 'asc' ? '↑' : '↓') : '⇅'}</th>
                       <th className="w-24" />
                     </tr>
@@ -619,7 +619,7 @@ export default function ImportDetail() {
                       <th className="text-left px-4 py-2 font-medium text-gray-600 w-24">Réf.</th>
                       <th className="text-left px-4 py-2 font-medium text-gray-600">Désignation</th>
                       <th className="text-left px-4 py-2 font-medium text-gray-600 w-20">Unité</th>
-                      <th className="text-right px-4 py-2 font-medium text-gray-600 w-28">PA HT (€)</th>
+                      <th className="text-right px-4 py-2 font-medium text-gray-600 w-28">Prix Catalogue HT (€)</th>
                       <th className="w-10" />
                     </tr>
                   </thead>

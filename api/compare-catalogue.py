@@ -13,7 +13,7 @@ ANTHROPIC_KEY = os.environ["ANTHROPIC_API_KEY"]
 
 BUCKET = "artisan-documents"
 SONNET = "claude-haiku-4-5-20251001"
-CHUNK_SIZES = [20, 5]
+CHUNK_SIZES = [5]
 
 
 class handler(BaseHTTPRequestHandler):
@@ -268,10 +268,12 @@ def deduplicate_smart(produits: list) -> list:
     seen = set()
     result = []
     for p in produits:
-        ref = (p.get('reference') or '').strip()
+        ref = (p.get('reference') or '').strip().lower()
+        des = (p.get('designation') or '').strip().lower()
+        unite = (p.get('unite') or '').strip().lower()
         prix_cents = int(round((p.get('prix_achat') or 0) * 100))
-        des_prefix = (p.get('designation') or '').lower()[:30]
-        key = f"{ref}|{prix_cents}" if ref else f"|{des_prefix}|{prix_cents}"
+        page = p.get('page') or 0
+        key = f"{ref}|{des}|{unite}|{prix_cents}|{page}"
         if key not in seen:
             seen.add(key)
             result.append(p)
