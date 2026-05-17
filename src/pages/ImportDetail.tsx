@@ -299,6 +299,26 @@ export default function ImportDetail() {
       })
     : []
 
+  const getDupKey = (p: { reference: string | null; designation: string; prix_achat: number; page: number | null }) => {
+    const ref = (p.reference || '').trim()
+    const baseRef = ref.replace(/\b(FREE|CLASSIC|TERRA|AMBRA|VENERE|LUCE|ANTIQUE|WIDE)\b/g, '').trim()
+    const prix = Math.round((p.prix_achat || 0) * 100)
+    const page = p.page || 0
+    if (baseRef) return `${baseRef}|${prix}|${page}`
+    return `|${(p.designation || '').toLowerCase().slice(0, 25)}|${prix}|${page}`
+  }
+
+  const dupOrigIndices: Set<number> = (() => {
+    if (!compareResult) return new Set()
+    const groups = new Map<string, number[]>()
+    compareResult.manquants.forEach((p, i) => {
+      const key = getDupKey(p)
+      if (!groups.has(key)) groups.set(key, [])
+      groups.get(key)!.push(i)
+    })
+    return new Set([...groups.values()].filter(g => g.length > 1).flat())
+  })()
+
   if (loading) return <div className="min-h-screen flex items-center justify-center text-gray-400">Chargement…</div>
   if (!imp) return <div className="min-h-screen flex items-center justify-center text-red-500">Import introuvable</div>
 
@@ -568,7 +588,14 @@ export default function ImportDetail() {
               <div className="bg-white rounded-xl border border-red-200 overflow-hidden">
                 <div className="px-4 py-3 bg-red-50 border-b border-red-200 flex items-center gap-2">
                   <PackageMinus className="w-4 h-4 text-red-500" />
-                  <span className="text-sm font-semibold text-red-700">Articles manquants en base ({compareResult.manquants.length})</span>
+                  <span className="text-sm font-semibold text-red-700">
+                    Articles manquants en base ({compareResult.manquants.length}{dupOrigIndices.size > 0 ? `, dont ${dupOrigIndices.size} dups potentiels` : ''})
+                  </span>
+                  {dupOrigIndices.size > 0 && (
+                    <button onClick={() => setSelectedManquants(prev => { const n = new Set(prev); dupOrigIndices.forEach(i => n.add(i)); return n })} className="ml-auto text-xs px-2 py-1 rounded border border-yellow-400 text-yellow-700 bg-yellow-50 hover:bg-yellow-100 transition-colors">
+                      Sélectionner les dups ({dupOrigIndices.size})
+                    </button>
+                  )}
                 </div>
                 <table className="w-full text-sm min-w-[700px]">
                   <thead className="bg-gray-50 border-b border-gray-200">
@@ -585,11 +612,16 @@ export default function ImportDetail() {
                   <tbody className="divide-y divide-gray-100">
                     {sortedManquantsIndices.map(origIdx => {
                       const p = compareResult.manquants[origIdx]
+                      const isDup = dupOrigIndices.has(origIdx)
+                      const isSelected = selectedManquants.has(origIdx)
                       return (
-                        <tr key={origIdx} className={selectedManquants.has(origIdx) ? "bg-red-100" : "bg-red-50/50"}>
-                          <td className="px-3 py-2"><input type="checkbox" checked={selectedManquants.has(origIdx)} onChange={() => toggleManquant(origIdx)} className="cursor-pointer" /></td>
+                        <tr key={origIdx} className={isSelected ? (isDup ? "bg-yellow-100" : "bg-red-100") : (isDup ? "bg-yellow-50/70" : "bg-red-50/50")}>
+                          <td className="px-3 py-2"><input type="checkbox" checked={isSelected} onChange={() => toggleManquant(origIdx)} className="cursor-pointer" /></td>
                           <td className="px-4 py-2 font-mono text-xs text-gray-500">{p.reference ?? '—'}</td>
-                          <td className="px-4 py-2 text-gray-900">{p.designation}</td>
+                          <td className="px-4 py-2 text-gray-900">
+                            {p.designation}
+                            {isDup && <span className="ml-2 text-[10px] bg-yellow-100 text-yellow-700 border border-yellow-300 rounded px-1 align-middle">⚠ dup?</span>}
+                          </td>
                           <td className="px-4 py-2 text-gray-500">{p.unite}</td>
                           <td className="px-4 py-2 text-right font-mono">{p.prix_achat.toFixed(2)}</td>
                           <td className="px-4 py-2 text-center font-mono text-xs text-gray-400">{p.page ?? '—'}</td>
