@@ -13,6 +13,7 @@ type Produit = {
   statut_import: 'ia' | 'valide' | 'manuel'
   image_url: string | null
   page?: number | null
+  page_catalogue?: number | null
 }
 
 type EcartPrix = {
@@ -72,6 +73,7 @@ export default function ImportDetail() {
   const [downloading, setDownloading] = useState(false)
   const [selectedManquants, setSelectedManquants] = useState<Set<number>>(new Set())
   const [editManquantIdx, setEditManquantIdx] = useState<number | null>(null)
+  const [manquantsPageFilter, setManquantsPageFilter] = useState('')
   const [editManquantData, setEditManquantData] = useState<{ reference: string | null; designation: string; unite: string; prix_achat: number }>({ reference: null, designation: '', unite: 'u', prix_achat: 0 })
   const [allProduits, setAllProduits] = useState<Produit[]>([])
   const [editIdAll, setEditIdAll] = useState<string | null>(null)
@@ -111,6 +113,7 @@ export default function ImportDetail() {
       designation: data.designation,
       unite: data.unite,
       prix_achat: data.prix_achat,
+      page_catalogue: p.page ?? null,
       statut_import: 'valide',
     })
     setEditManquantIdx(null)
@@ -130,7 +133,7 @@ export default function ImportDetail() {
       const p = compareResult.manquants[origIdx]
       await supabase.from('produits').insert({
         artisan_id: imp.artisan_id, fournisseur_id: imp.fournisseur_id, import_id: id,
-        reference: p.reference, designation: p.designation, unite: p.unite, prix_achat: p.prix_achat, statut_import: 'valide',
+        reference: p.reference, designation: p.designation, unite: p.unite, prix_achat: p.prix_achat, page_catalogue: p.page ?? null, statut_import: 'valide',
       })
     }
     setCompareResult(prev => prev ? { ...prev, manquants: prev.manquants.filter((_, j) => !selectedManquants.has(j)) } : prev)
@@ -635,6 +638,11 @@ export default function ImportDetail() {
                     )}
                   </div>
                 </div>
+                <div className="px-3 py-2 border-b border-gray-100 flex items-center gap-2 bg-gray-50/50">
+                  <span className="text-xs text-gray-500">Filtrer page :</span>
+                  <input type="number" value={manquantsPageFilter} onChange={e => setManquantsPageFilter(e.target.value)} placeholder="ex: 73" className="h-6 text-xs border border-gray-200 rounded px-2 w-20" />
+                  {manquantsPageFilter && <button onClick={() => setManquantsPageFilter('')} className="text-xs text-gray-400 hover:text-gray-600">✕</button>}
+                </div>
                 <table className="w-full text-sm min-w-[700px]">
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
@@ -648,7 +656,7 @@ export default function ImportDetail() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
-                    {sortedManquantsIndices.map(origIdx => {
+                    {sortedManquantsIndices.filter(i => !manquantsPageFilter || compareResult.manquants[i].page === parseInt(manquantsPageFilter)).map(origIdx => {
                       const p = compareResult.manquants[origIdx]
                       const isDup = dupOrigIndices.has(origIdx)
                       const isSelected = selectedManquants.has(origIdx)

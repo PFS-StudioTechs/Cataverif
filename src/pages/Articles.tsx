@@ -4,7 +4,7 @@ import { supabase } from '@/integrations/supabase/client'
 import { useAuth } from '@/hooks/useAuth'
 import { ArrowLeft, Pencil, Check, X, Trash2, ChevronUp, ChevronDown, ChevronsUpDown, Plus } from 'lucide-react'
 
-type SortField = 'fournisseur' | 'reference' | 'designation' | 'unite' | 'prix_achat' | 'statut_import'
+type SortField = 'fournisseur' | 'reference' | 'designation' | 'unite' | 'prix_achat' | 'statut_import' | 'page_catalogue'
 type SortDir = 'asc' | 'desc'
 
 type Produit = {
@@ -16,6 +16,7 @@ type Produit = {
   statut_import: 'ia' | 'valide' | 'manuel'
   fournisseur_id: string
   fournisseurs: { nom: string } | null
+  page_catalogue: number | null
 }
 
 const statutBadge = (s: string) => {
@@ -37,6 +38,7 @@ export default function Articles() {
   const [sortDir, setSortDir] = useState<SortDir>('asc')
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [doublonsOnly, setDoublonsOnly] = useState(false)
+  const [pageFilter, setPageFilter] = useState('')
   const [showAddForm, setShowAddForm] = useState(false)
   const [newData, setNewData] = useState({ fournisseur_id: '', reference: '', designation: '', unite: 'u', prix_achat: 0 })
   const [adding, setAdding] = useState(false)
@@ -131,7 +133,8 @@ export default function Articles() {
     .filter(p =>
       (filter === 'tous' || p.statut_import === filter) &&
       (fournisseurFilter === 'tous' || p.fournisseur_id === fournisseurFilter) &&
-      (!doublonsOnly || doublonIds.has(p.id))
+      (!doublonsOnly || doublonIds.has(p.id)) &&
+      (!pageFilter || p.page_catalogue === parseInt(pageFilter))
     )
     .sort((a, b) => {
       let va: string | number = ''
@@ -142,6 +145,7 @@ export default function Articles() {
       else if (sortField === 'unite') { va = a.unite; vb = b.unite }
       else if (sortField === 'prix_achat') { va = a.prix_achat; vb = b.prix_achat }
       else if (sortField === 'statut_import') { va = a.statut_import; vb = b.statut_import }
+      else if (sortField === 'page_catalogue') { va = a.page_catalogue ?? 0; vb = b.page_catalogue ?? 0 }
       if (va < vb) return sortDir === 'asc' ? -1 : 1
       if (va > vb) return sortDir === 'asc' ? 1 : -1
       return 0
@@ -175,6 +179,11 @@ export default function Articles() {
               Supprimer ({selected.size})
             </button>
           )}
+          <div className="flex items-center gap-1.5 border border-gray-200 rounded-lg px-2.5 py-1 bg-white">
+            <span className="text-xs text-gray-400">Page</span>
+            <input type="number" value={pageFilter} onChange={e => setPageFilter(e.target.value)} placeholder="—" className="text-xs w-12 outline-none" />
+            {pageFilter && <button onClick={() => setPageFilter('')} className="text-gray-300 hover:text-gray-500 text-xs">✕</button>}
+          </div>
           <span className="ml-auto self-center text-xs text-gray-400">{filtered.length} article{filtered.length !== 1 ? 's' : ''}</span>
           <button onClick={() => setShowAddForm(true)} disabled={showAddForm} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-50 transition-colors">
             <Plus className="w-3.5 h-3.5" />Ajouter
@@ -226,7 +235,7 @@ export default function Articles() {
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
                   <th className="w-8 px-3 py-3"><input type="checkbox" checked={filtered.length > 0 && filtered.every(p => selected.has(p.id))} onChange={() => toggleAll(filtered.map(p => p.id))} className="cursor-pointer" /></th>
-                  {([['fournisseur','Fournisseur','w-32','left'],['reference','Réf.','w-24','left'],['designation','Désignation','','left'],['unite','Unité','w-20','left'],['prix_achat','Prix Catalogue HT (€)','w-28','right'],['statut_import','Statut','w-24','left']] as [SortField,string,string,string][]).map(([f,label,w,align]) => (
+                  {([['fournisseur','Fournisseur','w-32','left'],['reference','Réf.','w-24','left'],['designation','Désignation','','left'],['unite','Unité','w-20','left'],['prix_achat','Prix Catalogue HT (€)','w-28','right'],['page_catalogue','Page','w-16','center'],['statut_import','Statut','w-24','left']] as [SortField,string,string,string][]).map(([f,label,w,align]) => (
                     <th key={f} onClick={() => toggleSort(f)} className={`px-4 py-3 font-medium text-gray-600 cursor-pointer hover:bg-gray-100 select-none ${w} text-${align}`}>
                       {label}<SortIcon field={f} />
                     </th>
@@ -245,6 +254,7 @@ export default function Articles() {
                         <td className="px-4 py-2"><input className="w-full border rounded px-2 py-1 text-xs" value={editData.designation ?? ''} onChange={e => setEditData(d => ({ ...d, designation: e.target.value }))} /></td>
                         <td className="px-4 py-2"><input className="w-full border rounded px-2 py-1 text-xs" value={editData.unite ?? ''} onChange={e => setEditData(d => ({ ...d, unite: e.target.value }))} /></td>
                         <td className="px-4 py-2"><input type="number" step="0.01" className="w-full border rounded px-2 py-1 text-xs text-right" value={editData.prix_achat ?? 0} onChange={e => setEditData(d => ({ ...d, prix_achat: parseFloat(e.target.value) }))} /></td>
+                        <td className="px-4 py-2 text-center text-xs text-gray-400">{p.page_catalogue ?? '—'}</td>
                         <td className="px-4 py-2">{statutBadge(p.statut_import)}</td>
                         <td className="px-4 py-2">
                           <div className="flex gap-1 justify-end">
@@ -261,6 +271,7 @@ export default function Articles() {
                         <td className="px-4 py-3 text-gray-900">{p.designation}</td>
                         <td className="px-4 py-3 text-gray-500">{p.unite}</td>
                         <td className="px-4 py-3 text-right font-mono">{p.prix_achat.toFixed(2)}</td>
+                        <td className="px-4 py-3 text-center font-mono text-xs text-gray-400">{p.page_catalogue ?? '—'}</td>
                         <td className="px-4 py-3">{statutBadge(p.statut_import)}</td>
                         <td className="px-4 py-3">
                           <div className="flex gap-1 justify-end">
@@ -273,7 +284,7 @@ export default function Articles() {
                   </tr>
                 ))}
                 {filtered.length === 0 && (
-                  <tr><td colSpan={7} className="text-center py-10 text-gray-400">Aucun article</td></tr>
+                  <tr><td colSpan={8} className="text-center py-10 text-gray-400">Aucun article</td></tr>
                 )}
               </tbody>
             </table>
