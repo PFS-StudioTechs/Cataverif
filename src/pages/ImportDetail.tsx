@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '@/integrations/supabase/client'
 import { ArrowLeft, CheckCircle2, AlertTriangle, HelpCircle, Pencil, Check, X, GitCompare, PackageMinus, PackagePlus, TrendingUp, Download, Trash2 } from 'lucide-react'
@@ -69,6 +69,7 @@ export default function ImportDetail() {
   const [compareProgress, setCompareProgress] = useState<string | null>(null)
   const [compareResult, setCompareResult] = useState<CompareResult | null>(null)
   const [compareError, setCompareError] = useState<string | null>(null)
+  const compareWasSet = useRef(false)
   const [importing, setImporting] = useState(false)
   const [downloading, setDownloading] = useState(false)
   const [selectedManquants, setSelectedManquants] = useState<Set<number>>(new Set())
@@ -216,8 +217,12 @@ export default function ImportDetail() {
 
   useEffect(() => {
     if (!id) return
-    if (compareResult) localStorage.setItem(`cataverif-compare-${id}`, JSON.stringify(compareResult))
-    else localStorage.removeItem(`cataverif-compare-${id}`)
+    if (compareResult) {
+      compareWasSet.current = true
+      localStorage.setItem(`cataverif-compare-${id}`, JSON.stringify(compareResult))
+    } else if (compareWasSet.current) {
+      localStorage.removeItem(`cataverif-compare-${id}`)
+    }
   }, [compareResult, id])
 
   const startEdit = (p: Produit) => {
