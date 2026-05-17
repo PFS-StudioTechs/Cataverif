@@ -19,6 +19,15 @@ type Produit = {
   page_catalogue: number | null
 }
 
+type CsvRow = {
+  fournisseur_nom: string | null
+  reference: string | null
+  designation: string
+  unite: string
+  prix_achat: number
+  page_catalogue: number | null
+}
+
 const statutBadge = (s: string) => {
   if (s === 'valide') return <span className="text-xs bg-green-50 text-green-700 border border-green-200 rounded-full px-2 py-0.5">Validé</span>
   if (s === 'ia') return <span className="text-xs bg-yellow-50 text-yellow-700 border border-yellow-200 rounded-full px-2 py-0.5">IA</span>
@@ -39,7 +48,8 @@ export default function Articles() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [doublonsOnly, setDoublonsOnly] = useState(false)
   const [pageFilter, setPageFilter] = useState('')
-  const [csvPreview, setCsvPreview] = useState<{ reference: string | null; designation: string; unite: string; prix_achat: number; page_catalogue: number | null }[]>([])
+  const [fournisseursAll, setFournisseursAll] = useState<{ id: string; nom: string }[]>([])
+  const [csvPreview, setCsvPreview] = useState<CsvRow[]>([])
   const [importingCsv, setImportingCsv] = useState(false)
   const csvInputRef = useRef<HTMLInputElement>(null)
   const [showAddForm, setShowAddForm] = useState(false)
@@ -63,13 +73,12 @@ export default function Articles() {
 
   const load = async () => {
     setLoading(true)
-    const { data } = await supabase
-      .from('produits')
-      .select('*, fournisseurs(nom)')
-      .eq('actif', true)
-      .order('fournisseur_id')
-      .order('designation')
+    const [{ data }, { data: fData }] = await Promise.all([
+      supabase.from('produits').select('*, fournisseurs(nom)').eq('actif', true).order('fournisseur_id').order('designation'),
+      supabase.from('fournisseurs').select('id, nom'),
+    ])
     setProduits((data as Produit[]) ?? [])
+    setFournisseursAll((fData ?? []) as { id: string; nom: string }[])
     setLoading(false)
   }
 
@@ -116,12 +125,13 @@ export default function Articles() {
     setAdding(false)
   }
 
-  const parseCsv = (text: string) => {
+  const parseCsv = (text: string): CsvRow[] => {
     const lines = text.split('\n').filter(l => l.trim())
     if (lines.length < 2) return []
     const sep = lines[0].includes(';') ? ';' : ','
     const headers = lines[0].split(sep).map(h => h.trim().toLowerCase().replace(/['"]/g, ''))
     const col = (...names: string[]) => { for (const n of names) { const i = headers.findIndex(h => h.includes(n)); if (i >= 0) return i } return -1 }
+    const foIdx = col('fournisseur', 'supplier', 'fournisseur_id')
     const refIdx = col('réf', 'ref', 'code', 'article')
     const desIdx = col('désignation', 'designation', 'libellé', 'nom')
     const uIdx = col('unité', 'unite')
@@ -133,7 +143,7 @@ export default function Articles() {
       const des = cells[desIdx]?.trim()
       if (!des) return []
       const pa = pIdx >= 0 ? parseFloat((cells[pIdx] || '0').replace(',', '.')) || 0 : 0
-      return [{ reference: refIdx >= 0 ? (cells[refIdx]?.trim() || null) : null, designation: des, unite: uIdx >= 0 ? (cells[uIdx]?.trim() || 'u') : 'u', prix_achat: Math.max(0, pa), page_catalogue: pgIdx >= 0 ? (parseInt(cells[pgIdx]) || null) : null }]
+      return [{ fournisseur_nom: foIdx >= 0 ? (cells[foIdx]?.trim() || null) : null, reference: refIdx >= 0 ? (cells[refIdx]?.trim() || null) : null, designation: des, unite: uIdx >= 0 ? (cells[uIdx]?.trim() || 'u') : 'u', prix_achat: Math.max(0, pa), page_catalogue: pgIdx >= 0 ? (parseInt(cells[pgIdx]) || null) : null }]
     })
   }
 
@@ -147,9 +157,18 @@ export default function Articles() {
   }
 
   const validerCsv = async () => {
-    if (!csvPreview.length || !fournisseurFilter || fournisseurFilter === 'tous') return
+    if (!csvPreview.length) return
+    const csvHasFournisseur = csvPreview.some(a => a.fournisseur_nom)
+    if (!csvHasFournisseur && fournisseurFilter === 'tous') return
     setImportingCsv(true)
-    const inserts = csvPreview.map(a => ({ artisan_id: user?.id, fournisseur_id: fournisseurFilter, reference: a.reference, designation: a.designation, unite: a.unite, prix_achat: a.prix_achat, page_catalogue: a.page_catalogue, statut_import: 'manuel', actif: true }))
+    const nameMap = new Map(fournisseursAll.map(f => [f.nom.toLowerCase(), f.id]))
+    const inserts = csvPreview.flatMap(a => {
+      let fid: string | null = null
+      if (a.fournisseur_nom) fid = nameMap.get(a.fournisseur_nom.toLowerCase()) ?? null
+      if (!fid && fournisseurFilter !== 'tous') fid = fournisseurFilter
+      if (!fid) return []
+      return [{ artisan_id: user?.id, fournisseur_id: fid, reference: a.reference, designation: a.designation, unite: a.unite, prix_achat: a.prix_achat, page_catalogue: a.page_catalogue, statut_import: 'manuel', actif: true }]
+    })
     const { data } = await supabase.from('produits').insert(inserts).select('*, fournisseurs(nom)')
     if (data) setProduits(prev => [...prev, ...(data as Produit[])])
     setCsvPreview([])
@@ -237,44 +256,64 @@ export default function Articles() {
           </button>
         </div>
 
-        {csvPreview.length > 0 && (
-          <div className="border rounded-lg overflow-hidden bg-green-50/50 mb-4">
-            <div className="px-3 py-2 bg-green-100 text-xs font-medium text-green-800 border-b border-green-200 flex items-center gap-3">
-              <span>Import CSV — {csvPreview.length} articles</span>
-              {fournisseurFilter === 'tous' && <span className="text-orange-600 font-normal">⚠ Sélectionner un fournisseur dans le filtre avant de valider</span>}
-              <div className="ml-auto flex gap-2">
-                <button onClick={validerCsv} disabled={importingCsv || fournisseurFilter === 'tous'} className="px-3 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700 disabled:opacity-50">
-                  {importingCsv ? 'Import…' : `Valider tout (${csvPreview.length})`}
-                </button>
-                <button onClick={() => setCsvPreview([])} className="px-3 py-1 bg-white border border-gray-200 rounded text-xs text-gray-600 hover:bg-gray-50"><X className="w-3 h-3" /></button>
+        {csvPreview.length > 0 && (() => {
+          const csvHasFournisseur = csvPreview.some(a => a.fournisseur_nom)
+          const nameMap = new Map(fournisseursAll.map(f => [f.nom.toLowerCase(), f.id]))
+          const nbSansFournisseur = csvHasFournisseur ? csvPreview.filter(a => a.fournisseur_nom && !nameMap.has(a.fournisseur_nom.toLowerCase())).length : 0
+          const canValider = csvHasFournisseur ? true : fournisseurFilter !== 'tous'
+          return (
+            <div className="border rounded-lg overflow-hidden bg-green-50/50 mb-4">
+              <div className="px-3 py-2 bg-green-100 text-xs font-medium text-green-800 border-b border-green-200 flex items-center gap-3">
+                <span>Import CSV — {csvPreview.length} articles</span>
+                {!csvHasFournisseur && fournisseurFilter === 'tous' && <span className="text-orange-600 font-normal">⚠ Sélectionner un fournisseur dans le filtre avant de valider</span>}
+                {csvHasFournisseur && nbSansFournisseur > 0 && <span className="text-orange-600 font-normal">⚠ {nbSansFournisseur} ligne(s) avec fournisseur introuvable seront ignorées</span>}
+                <div className="ml-auto flex gap-2">
+                  <button onClick={validerCsv} disabled={importingCsv || !canValider} className="px-3 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700 disabled:opacity-50">
+                    {importingCsv ? 'Import…' : `Valider tout (${csvPreview.length})`}
+                  </button>
+                  <button onClick={() => setCsvPreview([])} className="px-3 py-1 bg-white border border-gray-200 rounded text-xs text-gray-600 hover:bg-gray-50"><X className="w-3 h-3" /></button>
+                </div>
+              </div>
+              <div className="max-h-64 overflow-y-auto">
+                <table className="w-full text-xs">
+                  <thead className="bg-gray-50 border-b border-gray-200 sticky top-0">
+                    <tr>
+                      {csvHasFournisseur && <th className="px-3 py-2 text-left font-medium text-gray-600 w-28">Fournisseur</th>}
+                      <th className="px-3 py-2 text-left font-medium text-gray-600 w-24">Réf.</th>
+                      <th className="px-3 py-2 text-left font-medium text-gray-600">Désignation</th>
+                      <th className="px-3 py-2 text-left font-medium text-gray-600 w-16">Unité</th>
+                      <th className="px-3 py-2 text-right font-medium text-gray-600 w-24">Prix HT (€)</th>
+                      <th className="px-3 py-2 text-center font-medium text-gray-600 w-14">Page</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {csvPreview.map((a, i) => {
+                      const found = a.fournisseur_nom ? nameMap.has(a.fournisseur_nom.toLowerCase()) : true
+                      return (
+                        <tr key={i} className={`hover:bg-gray-50 ${csvHasFournisseur && !found ? 'bg-orange-50/50' : ''}`}>
+                          {csvHasFournisseur && (
+                            <td className="px-3 py-1.5">
+                              {a.fournisseur_nom
+                                ? found
+                                  ? <span className="text-gray-700">{a.fournisseur_nom}</span>
+                                  : <span className="text-orange-600">⚠ {a.fournisseur_nom}</span>
+                                : <span className="text-gray-400">—</span>}
+                            </td>
+                          )}
+                          <td className="px-3 py-1.5 font-mono text-gray-500">{a.reference ?? '—'}</td>
+                          <td className="px-3 py-1.5 text-gray-900">{a.designation}</td>
+                          <td className="px-3 py-1.5 text-gray-500">{a.unite}</td>
+                          <td className="px-3 py-1.5 text-right font-mono">{a.prix_achat.toFixed(2)}</td>
+                          <td className="px-3 py-1.5 text-center text-gray-400">{a.page_catalogue ?? '—'}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
               </div>
             </div>
-            <div className="max-h-64 overflow-y-auto">
-              <table className="w-full text-xs">
-                <thead className="bg-gray-50 border-b border-gray-200 sticky top-0">
-                  <tr>
-                    <th className="px-3 py-2 text-left font-medium text-gray-600 w-24">Réf.</th>
-                    <th className="px-3 py-2 text-left font-medium text-gray-600">Désignation</th>
-                    <th className="px-3 py-2 text-left font-medium text-gray-600 w-16">Unité</th>
-                    <th className="px-3 py-2 text-right font-medium text-gray-600 w-24">Prix HT (€)</th>
-                    <th className="px-3 py-2 text-center font-medium text-gray-600 w-14">Page</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {csvPreview.map((a, i) => (
-                    <tr key={i} className="hover:bg-gray-50">
-                      <td className="px-3 py-1.5 font-mono text-gray-500">{a.reference ?? '—'}</td>
-                      <td className="px-3 py-1.5 text-gray-900">{a.designation}</td>
-                      <td className="px-3 py-1.5 text-gray-500">{a.unite}</td>
-                      <td className="px-3 py-1.5 text-right font-mono">{a.prix_achat.toFixed(2)}</td>
-                      <td className="px-3 py-1.5 text-center text-gray-400">{a.page_catalogue ?? '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
+          )
+        })()}
 
         {showAddForm && (
           <div className="border rounded-lg overflow-hidden bg-blue-50/50 mb-4">
