@@ -13,7 +13,7 @@ ANTHROPIC_KEY = os.environ["ANTHROPIC_API_KEY"]
 
 BUCKET = "artisan-documents"
 SONNET = "claude-haiku-4-5-20251001"
-PAGES_PER_CHUNK = 10
+CHUNK_SIZES = [20, 5]
 
 
 class handler(BaseHTTPRequestHandler):
@@ -115,13 +115,14 @@ def extract_pdf(file_bytes: bytes, ai: anthropic.Anthropic) -> list:
     if not pages_text:
         return []
 
-    produits = []
-    for i in range(0, len(pages_text), PAGES_PER_CHUNK):
-        chunk_pages = pages_text[i:i + PAGES_PER_CHUNK]
-        chunk = "\n\n---\n\n".join(f"=== PAGE {n} ===\n{t}" for n, t in chunk_pages)
-        produits.extend(call_claude_text(chunk, ai))
+    all_produits = []
+    for chunk_size in CHUNK_SIZES:
+        for i in range(0, len(pages_text), chunk_size):
+            chunk_pages = pages_text[i:i + chunk_size]
+            chunk = "\n\n---\n\n".join(f"=== PAGE {n} ===\n{t}" for n, t in chunk_pages)
+            all_produits.extend(call_claude_text(chunk, ai))
 
-    return deduplicate(produits)
+    return deduplicate_smart(all_produits)
 
 
 def call_claude_text(text: str, ai: anthropic.Anthropic) -> list:
@@ -131,8 +132,10 @@ Réponds UNIQUEMENT en JSON compact sur une seule ligne, sans aucun texte avant 
 {{"p":[{{"r":"ref_ou_null","d":"designation","u":"unite","pa":0.00,"pg":1}}]}}
 Règles :
 - r=null si absent, u="u" si absente, pa=0 si absent, pg=numéro de la section === PAGE N === où le produit apparaît.
-- Si un même article a plusieurs prix selon une variante (qualité, finition, conditionnement, taille, etc.), extraire UN article par prix. Concaténer le code article et la variante dans r (ex: "U11 FREE", "U11 CLASSIC", "REF001 5L").
-- Extraire TOUTES les lignes ayant un prix, y compris les forfaits, suppléments et surcoûts.
+- VARIANTES PAR CLASSE : si un article a plusieurs prix selon une classe (VENERE/AMBRA/TERRA/LUCE/FREE/CLASSIC/ANTIQUE/WIDE), extraire UN article par prix. Concaténer code + variante dans r (ex: "U11 FREE", "U11 CLASSIC", "U11 VENERE").
+- TABLEAUX MULTI-COLONNES : quand des colonnes ont des noms de format/dimension (ex: LAMPARQUET, EXTRALAMP, LISTOLAMP, ATENE, LISTONI), une ligne avec N prix = N articles distincts. Construire r avec essence+grade+colonne (ex: r="Chêne Roble VENERE LAMPARQUET" pa=77.00 ; r="Chêne Roble VENERE EXTRALAMP" pa=108.70). Ignorer les cellules tiret (-).
+- MÊME RÉFÉRENCE SUR PAGES DIFFÉRENTES avec prix différents = produits distincts. Inclure le nom de la collection visible sur la page (Dimora, Decora, Uniko, Residence, Carpazi, Tavola3strati...) dans d pour les différencier.
+- Extraire TOUTES les lignes ayant un prix, y compris forfaits, suppléments, surcoûts, colles, accessoires.
 
 TEXTE DU CATALOGUE :
 {text}"""
@@ -255,6 +258,20 @@ def deduplicate(produits: list) -> list:
     result = []
     for p in produits:
         key = f"{p.get('reference') or ''}|{p.get('designation', '').lower()}"
+        if key not in seen:
+            seen.add(key)
+            result.append(p)
+    return result
+
+
+def deduplicate_smart(produits: list) -> list:
+    seen = set()
+    result = []
+    for p in produits:
+        ref = (p.get('reference') or '').strip()
+        prix_cents = int(round((p.get('prix_achat') or 0) * 100))
+        des_prefix = (p.get('designation') or '').lower()[:30]
+        key = f"{ref}|{prix_cents}" if ref else f"|{des_prefix}|{prix_cents}"
         if key not in seen:
             seen.add(key)
             result.append(p)
