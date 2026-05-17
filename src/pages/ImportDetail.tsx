@@ -71,6 +71,8 @@ export default function ImportDetail() {
   const [importing, setImporting] = useState(false)
   const [downloading, setDownloading] = useState(false)
   const [selectedManquants, setSelectedManquants] = useState<Set<number>>(new Set())
+  const [editManquantIdx, setEditManquantIdx] = useState<number | null>(null)
+  const [editManquantData, setEditManquantData] = useState<{ reference: string | null; designation: string; unite: string; prix_achat: number }>({ reference: null, designation: '', unite: 'u', prix_achat: 0 })
   const [allProduits, setAllProduits] = useState<Produit[]>([])
   const [editIdAll, setEditIdAll] = useState<string | null>(null)
   const [editDataAll, setEditDataAll] = useState<Partial<Produit>>({})
@@ -100,23 +102,47 @@ export default function ImportDetail() {
   const validerManquant = async (origIdx: number) => {
     if (!compareResult || !imp) return
     const p = compareResult.manquants[origIdx]
+    const data = editManquantIdx === origIdx ? editManquantData : { reference: p.reference, designation: p.designation, unite: p.unite, prix_achat: p.prix_achat }
     await supabase.from('produits').insert({
       artisan_id: imp.artisan_id,
       fournisseur_id: imp.fournisseur_id,
       import_id: id,
-      reference: p.reference,
-      designation: p.designation,
-      unite: p.unite,
-      prix_achat: p.prix_achat,
+      reference: data.reference,
+      designation: data.designation,
+      unite: data.unite,
+      prix_achat: data.prix_achat,
       statut_import: 'valide',
     })
+    setEditManquantIdx(null)
     setCompareResult(prev => prev ? { ...prev, manquants: prev.manquants.filter((_, j) => j !== origIdx) } : prev)
     shiftSelectedManquants(origIdx)
   }
 
   const supprimerManquant = (origIdx: number) => {
+    if (editManquantIdx === origIdx) setEditManquantIdx(null)
     setCompareResult(prev => prev ? { ...prev, manquants: prev.manquants.filter((_, j) => j !== origIdx) } : prev)
     shiftSelectedManquants(origIdx)
+  }
+
+  const validerSelectedManquants = async () => {
+    if (!compareResult || !imp || selectedManquants.size === 0) return
+    for (const origIdx of selectedManquants) {
+      const p = compareResult.manquants[origIdx]
+      await supabase.from('produits').insert({
+        artisan_id: imp.artisan_id, fournisseur_id: imp.fournisseur_id, import_id: id,
+        reference: p.reference, designation: p.designation, unite: p.unite, prix_achat: p.prix_achat, statut_import: 'valide',
+      })
+    }
+    setCompareResult(prev => prev ? { ...prev, manquants: prev.manquants.filter((_, j) => !selectedManquants.has(j)) } : prev)
+    setSelectedManquants(new Set())
+    setEditManquantIdx(null)
+  }
+
+  const supprimerSelectedManquants = () => {
+    if (!compareResult || selectedManquants.size === 0) return
+    setCompareResult(prev => prev ? { ...prev, manquants: prev.manquants.filter((_, j) => !selectedManquants.has(j)) } : prev)
+    setSelectedManquants(new Set())
+    setEditManquantIdx(null)
   }
 
   const deleteFantome = async (id: string) => {
@@ -591,11 +617,23 @@ export default function ImportDetail() {
                   <span className="text-sm font-semibold text-red-700">
                     Articles manquants en base ({compareResult.manquants.length}{dupOrigIndices.size > 0 ? `, dont ${dupOrigIndices.size} dups potentiels` : ''})
                   </span>
-                  {dupOrigIndices.size > 0 && (
-                    <button onClick={() => setSelectedManquants(prev => { const n = new Set(prev); dupOrigIndices.forEach(i => n.add(i)); return n })} className="ml-auto text-xs px-2 py-1 rounded border border-yellow-400 text-yellow-700 bg-yellow-50 hover:bg-yellow-100 transition-colors">
-                      Sélectionner les dups ({dupOrigIndices.size})
-                    </button>
-                  )}
+                  <div className="ml-auto flex gap-2">
+                    {dupOrigIndices.size > 0 && (
+                      <button onClick={() => setSelectedManquants(prev => { const n = new Set(prev); dupOrigIndices.forEach(i => n.add(i)); return n })} className="text-xs px-2 py-1 rounded border border-yellow-400 text-yellow-700 bg-yellow-50 hover:bg-yellow-100 transition-colors">
+                        Sélect. dups ({dupOrigIndices.size})
+                      </button>
+                    )}
+                    {selectedManquants.size > 0 && (
+                      <>
+                        <button onClick={validerSelectedManquants} className="text-xs px-2 py-1 rounded border border-green-400 text-green-700 bg-green-50 hover:bg-green-100 transition-colors">
+                          Valider ({selectedManquants.size})
+                        </button>
+                        <button onClick={supprimerSelectedManquants} className="text-xs px-2 py-1 rounded border border-red-400 text-red-700 bg-red-50 hover:bg-red-100 transition-colors">
+                          Supprimer ({selectedManquants.size})
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
                 <table className="w-full text-sm min-w-[700px]">
                   <thead className="bg-gray-50 border-b border-gray-200">
@@ -614,19 +652,34 @@ export default function ImportDetail() {
                       const p = compareResult.manquants[origIdx]
                       const isDup = dupOrigIndices.has(origIdx)
                       const isSelected = selectedManquants.has(origIdx)
+                      const isEditing = editManquantIdx === origIdx
                       return (
                         <tr key={origIdx} className={isSelected ? (isDup ? "bg-yellow-100" : "bg-red-100") : (isDup ? "bg-yellow-50/70" : "bg-red-50/50")}>
                           <td className="px-3 py-2"><input type="checkbox" checked={isSelected} onChange={() => toggleManquant(origIdx)} className="cursor-pointer" /></td>
-                          <td className="px-4 py-2 font-mono text-xs text-gray-500">{p.reference ?? '—'}</td>
-                          <td className="px-4 py-2 text-gray-900">
-                            {p.designation}
-                            {isDup && <span className="ml-2 text-[10px] bg-yellow-100 text-yellow-700 border border-yellow-300 rounded px-1 align-middle">⚠ dup?</span>}
-                          </td>
-                          <td className="px-4 py-2 text-gray-500">{p.unite}</td>
-                          <td className="px-4 py-2 text-right font-mono">{p.prix_achat.toFixed(2)}</td>
-                          <td className="px-4 py-2 text-center font-mono text-xs text-gray-400">{p.page ?? '—'}</td>
+                          {isEditing ? (
+                            <>
+                              <td className="px-2 py-1.5"><input className="w-full border rounded px-2 py-0.5 text-xs font-mono" value={editManquantData.reference ?? ''} onChange={e => setEditManquantData(d => ({ ...d, reference: e.target.value || null }))} placeholder="Réf." /></td>
+                              <td className="px-2 py-1.5"><input className="w-full border rounded px-2 py-0.5 text-xs" value={editManquantData.designation} onChange={e => setEditManquantData(d => ({ ...d, designation: e.target.value }))} placeholder="Désignation" /></td>
+                              <td className="px-2 py-1.5"><input className="w-full border rounded px-2 py-0.5 text-xs w-16" value={editManquantData.unite} onChange={e => setEditManquantData(d => ({ ...d, unite: e.target.value }))} placeholder="u" /></td>
+                              <td className="px-2 py-1.5"><input type="number" step="0.01" className="w-full border rounded px-2 py-0.5 text-xs text-right" value={editManquantData.prix_achat} onChange={e => setEditManquantData(d => ({ ...d, prix_achat: parseFloat(e.target.value) || 0 }))} /></td>
+                              <td className="px-4 py-2 text-center font-mono text-xs text-gray-400">{p.page ?? '—'}</td>
+                            </>
+                          ) : (
+                            <>
+                              <td className="px-4 py-2 font-mono text-xs text-gray-500">{p.reference ?? '—'}</td>
+                              <td className="px-4 py-2 text-gray-900">
+                                {p.designation}
+                                {isDup && <span className="ml-2 text-[10px] bg-yellow-100 text-yellow-700 border border-yellow-300 rounded px-1 align-middle">⚠ dup?</span>}
+                              </td>
+                              <td className="px-4 py-2 text-gray-500">{p.unite}</td>
+                              <td className="px-4 py-2 text-right font-mono">{p.prix_achat.toFixed(2)}</td>
+                              <td className="px-4 py-2 text-center font-mono text-xs text-gray-400">{p.page ?? '—'}</td>
+                            </>
+                          )}
                           <td className="px-2 py-1.5">
                             <div className="flex gap-1 justify-end">
+                              {!isEditing && <button onClick={() => { setEditManquantIdx(origIdx); setEditManquantData({ reference: p.reference, designation: p.designation, unite: p.unite, prix_achat: p.prix_achat }) }} title="Éditer" className="p-1 rounded hover:bg-blue-100 text-gray-300 hover:text-blue-500 transition-colors"><Pencil className="w-3.5 h-3.5" /></button>}
+                              {isEditing && <button onClick={() => setEditManquantIdx(null)} title="Annuler" className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"><X className="w-3.5 h-3.5" /></button>}
                               <button onClick={() => validerManquant(origIdx)} title="Valider" className="p-1 rounded hover:bg-green-100 text-green-400 hover:text-green-600 transition-colors"><Check className="w-3.5 h-3.5" /></button>
                               <button onClick={() => supprimerManquant(origIdx)} title="Supprimer" className="p-1 rounded hover:bg-red-100 text-red-400 hover:text-red-600 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
                             </div>
