@@ -176,10 +176,47 @@ export default function Articles() {
             </button>
           )}
           <span className="ml-auto self-center text-xs text-gray-400">{filtered.length} article{filtered.length !== 1 ? 's' : ''}</span>
-          <button onClick={() => setShowAddForm(true)} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-500 text-white hover:bg-blue-600 transition-colors">
+          <button onClick={() => setShowAddForm(true)} disabled={showAddForm} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-50 transition-colors">
             <Plus className="w-3.5 h-3.5" />Ajouter
           </button>
         </div>
+
+        {showAddForm && (
+          <div className="border rounded-lg overflow-hidden bg-blue-50/50 mb-4">
+            <div className="px-3 py-2 bg-blue-100 text-xs font-medium text-blue-800 border-b border-blue-200">Nouvel article manuel</div>
+            <div className="flex gap-2 p-3 items-end flex-wrap">
+              <div className="flex flex-col gap-1">
+                <span className="text-xs text-gray-500">Fournisseur *</span>
+                <select value={newData.fournisseur_id} onChange={e => setNewData(d => ({ ...d, fournisseur_id: e.target.value }))} className="h-7 text-xs border border-gray-200 rounded px-2 bg-white">
+                  <option value="">— Choisir —</option>
+                  {fournisseurs.map(([id, nom]) => <option key={id} value={id}>{nom}</option>)}
+                </select>
+              </div>
+              <div className="flex flex-col gap-1">
+                <span className="text-xs text-gray-500">Référence</span>
+                <input value={newData.reference} onChange={e => setNewData(d => ({ ...d, reference: e.target.value }))} className="h-7 text-xs border border-gray-200 rounded px-2 w-28" placeholder="Optionnel" />
+              </div>
+              <div className="flex flex-col gap-1 flex-1 min-w-40">
+                <span className="text-xs text-gray-500">Désignation *</span>
+                <input value={newData.designation} onChange={e => setNewData(d => ({ ...d, designation: e.target.value }))} className="h-7 text-xs border border-gray-200 rounded px-2" placeholder="Désignation" />
+              </div>
+              <div className="flex flex-col gap-1">
+                <span className="text-xs text-gray-500">Unité</span>
+                <input value={newData.unite} onChange={e => setNewData(d => ({ ...d, unite: e.target.value }))} className="h-7 text-xs border border-gray-200 rounded px-2 w-16" placeholder="u" />
+              </div>
+              <div className="flex flex-col gap-1">
+                <span className="text-xs text-gray-500">PA HT (€)</span>
+                <input type="number" min="0" step="0.01" value={newData.prix_achat} onChange={e => setNewData(d => ({ ...d, prix_achat: parseFloat(e.target.value) || 0 }))} className="h-7 text-xs border border-gray-200 rounded px-2 text-right w-28" />
+              </div>
+              <button onClick={addProduit} disabled={adding || !newData.fournisseur_id || !newData.designation.trim()} className="h-7 text-xs px-3 flex items-center gap-1 bg-blue-600 hover:bg-blue-700 text-white rounded disabled:opacity-50 disabled:cursor-not-allowed">
+                <Check className="w-3.5 h-3.5" /> Enregistrer
+              </button>
+              <button onClick={() => { setShowAddForm(false); setNewData({ fournisseur_id: '', reference: '', designation: '', unite: 'u', prix_achat: 0 }) }} className="h-7 text-xs px-2 flex items-center text-gray-500 hover:text-gray-700 rounded hover:bg-gray-100">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        )}
 
         {loading ? (
           <div className="text-center py-16 text-gray-400">Chargement…</div>
@@ -244,49 +281,6 @@ export default function Articles() {
         )}
       </main>
 
-      {showAddForm && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setShowAddForm(false)}>
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4 p-6" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-5">
-              <h2 className="font-semibold text-gray-900">Ajouter un article</h2>
-              <button onClick={() => setShowAddForm(false)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
-            </div>
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Fournisseur *</label>
-                <select value={newData.fournisseur_id} onChange={e => setNewData(d => ({ ...d, fournisseur_id: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
-                  <option value="">— Sélectionner —</option>
-                  {fournisseurs.map(([id, nom]) => <option key={id} value={id}>{nom}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Référence</label>
-                <input className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono" placeholder="REF-001" value={newData.reference} onChange={e => setNewData(d => ({ ...d, reference: e.target.value }))} />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Désignation *</label>
-                <input className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" placeholder="Nom de l'article" value={newData.designation} onChange={e => setNewData(d => ({ ...d, designation: e.target.value }))} />
-              </div>
-              <div className="flex gap-3">
-                <div className="flex-1">
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Unité</label>
-                  <input className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" placeholder="u" value={newData.unite} onChange={e => setNewData(d => ({ ...d, unite: e.target.value }))} />
-                </div>
-                <div className="flex-1">
-                  <label className="block text-xs font-medium text-gray-600 mb-1">PA HT (€)</label>
-                  <input type="number" step="0.01" min="0" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-right" value={newData.prix_achat} onChange={e => setNewData(d => ({ ...d, prix_achat: parseFloat(e.target.value) || 0 }))} />
-                </div>
-              </div>
-            </div>
-            <div className="flex gap-3 mt-6">
-              <button onClick={() => setShowAddForm(false)} className="flex-1 py-2 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 transition-colors">Annuler</button>
-              <button onClick={addProduit} disabled={adding || !newData.fournisseur_id || !newData.designation.trim()} className="flex-1 py-2 rounded-lg bg-blue-500 text-white text-sm font-medium hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
-                {adding ? 'Enregistrement…' : 'Ajouter'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
