@@ -143,7 +143,7 @@ Règles :
 - MÊME RÉFÉRENCE SUR PAGES DIFFÉRENTES avec prix différents = produits distincts. Inclure le nom de la collection visible sur la page (Dimora, Decora, Uniko, Residence, Carpazi, Tavola3strati...) dans d pour les différencier.
 - DÉCLINAISONS DE TAILLE/DIMENSION : si un tableau liste le même modèle en plusieurs dimensions (ex: 100x13mm, 120x13mm, 140x13mm), extraire UN article par dimension avec la dimension dans d. Ne jamais fusionner plusieurs dimensions en une seule ligne.
 - Extraire TOUTES les lignes ayant un prix, y compris forfaits, suppléments, surcoûts, colles, accessoires.
-- LANGUE : si une page contient du texte en plusieurs langues (français + espagnol ou français + italien), extraire UNIQUEMENT les désignations en français. Ignorer les blocs en espagnol (acabado, madera, rastreles, zocalo, barnizado, evaporado, piallato en bruto…) et en italien (epossipoliuretanico, silanico, ipoallergenico, vinilico, sottofondi, incastre…).
+- LANGUE : si une page contient des blocs de texte purement en espagnol ou en italien (phrases entières avec mots comme madera, rastreles, zocalo, barnizado, acabado, espesor, ancho, largo, epossipoliuretanico, silanico, ipoallergenico, sottofondi), ignorer ces blocs et ne pas les extraire en doublon. ATTENTION : ne pas confondre avec les noms commerciaux de couleurs et finitions qui utilisent des mots italiens (Acqua Neutro, Bianco Neve, Naturalizzato, Piallato, Cognac, Clif, Sabbia, etc.) — ceux-ci font partie de la désignation française et doivent être extraits normalement.
 
 TEXTE DU CATALOGUE :
 {text}"""
