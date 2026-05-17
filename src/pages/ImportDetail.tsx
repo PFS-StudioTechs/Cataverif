@@ -299,7 +299,7 @@ export default function ImportDetail() {
       })
     : []
 
-  const getDupKey = (p: { reference: string | null; designation: string; prix_achat: number; page: number | null }) => {
+  const getDupKey = (p: { reference: string | null; designation: string; prix_achat: number; page?: number | null }) => {
     const ref = (p.reference || '').trim()
     const baseRef = ref.replace(/\b(FREE|CLASSIC|TERRA|AMBRA|VENERE|LUCE|ANTIQUE|WIDE)\b/g, '').trim()
     const prix = Math.round((p.prix_achat || 0) * 100)
