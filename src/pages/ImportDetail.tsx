@@ -141,6 +141,21 @@ export default function ImportDetail() {
     setEditManquantIdx(null)
   }
 
+  const validerNonDups = async () => {
+    if (!compareResult || !imp) return
+    const toValidate = compareResult.manquants.map((p, i) => ({ p, i })).filter(({ i }) => !dupOrigIndices.has(i))
+    for (const { p } of toValidate) {
+      await supabase.from('produits').insert({
+        artisan_id: imp.artisan_id, fournisseur_id: imp.fournisseur_id, import_id: id,
+        reference: p.reference, designation: p.designation, unite: p.unite, prix_achat: p.prix_achat, page_catalogue: p.page ?? null, statut_import: 'valide',
+      })
+    }
+    const toValidateSet = new Set(toValidate.map(({ i }) => i))
+    setCompareResult(prev => prev ? { ...prev, manquants: prev.manquants.filter((_, j) => !toValidateSet.has(j)) } : prev)
+    setSelectedManquants(new Set())
+    setEditManquantIdx(null)
+  }
+
   const supprimerSelectedManquants = () => {
     if (!compareResult || selectedManquants.size === 0) return
     setCompareResult(prev => prev ? { ...prev, manquants: prev.manquants.filter((_, j) => !selectedManquants.has(j)) } : prev)
@@ -621,6 +636,11 @@ export default function ImportDetail() {
                     Articles manquants en base ({compareResult.manquants.length}{dupOrigIndices.size > 0 ? `, dont ${dupOrigIndices.size} dups potentiels` : ''})
                   </span>
                   <div className="ml-auto flex gap-2">
+                    {compareResult.manquants.length > dupOrigIndices.size && (
+                      <button onClick={validerNonDups} className="text-xs px-2 py-1 rounded border border-green-500 text-green-700 bg-green-50 hover:bg-green-100 transition-colors font-medium">
+                        ✓ Valider non-dups ({compareResult.manquants.length - dupOrigIndices.size})
+                      </button>
+                    )}
                     {dupOrigIndices.size > 0 && (
                       <button onClick={() => setSelectedManquants(prev => { const n = new Set(prev); dupOrigIndices.forEach(i => n.add(i)); return n })} className="text-xs px-2 py-1 rounded border border-yellow-400 text-yellow-700 bg-yellow-50 hover:bg-yellow-100 transition-colors">
                         Sélect. dups ({dupOrigIndices.size})
