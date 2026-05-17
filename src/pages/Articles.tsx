@@ -254,7 +254,7 @@ export default function Articles() {
                         <td className="px-4 py-2"><input className="w-full border rounded px-2 py-1 text-xs" value={editData.designation ?? ''} onChange={e => setEditData(d => ({ ...d, designation: e.target.value }))} /></td>
                         <td className="px-4 py-2"><input className="w-full border rounded px-2 py-1 text-xs" value={editData.unite ?? ''} onChange={e => setEditData(d => ({ ...d, unite: e.target.value }))} /></td>
                         <td className="px-4 py-2"><input type="number" step="0.01" className="w-full border rounded px-2 py-1 text-xs text-right" value={editData.prix_achat ?? 0} onChange={e => setEditData(d => ({ ...d, prix_achat: parseFloat(e.target.value) }))} /></td>
-                        <td className="px-4 py-2 text-center text-xs text-gray-400">{p.page_catalogue ?? '—'}</td>
+                        <td className="px-4 py-2"><input type="number" className="w-full border rounded px-2 py-1 text-xs text-center" value={editData.page_catalogue ?? ''} onChange={e => setEditData(d => ({ ...d, page_catalogue: e.target.value ? parseInt(e.target.value) : null }))} placeholder="—" /></td>
                         <td className="px-4 py-2">{statutBadge(p.statut_import)}</td>
                         <td className="px-4 py-2">
                           <div className="flex gap-1 justify-end">
@@ -275,7 +275,7 @@ export default function Articles() {
                         <td className="px-4 py-3">{statutBadge(p.statut_import)}</td>
                         <td className="px-4 py-3">
                           <div className="flex gap-1 justify-end">
-                            <button onClick={() => { setEditId(p.id); setEditData({ reference: p.reference, designation: p.designation, unite: p.unite, prix_achat: p.prix_achat }) }} className="text-gray-300 hover:text-blue-500 transition-colors"><Pencil className="w-4 h-4" /></button>
+                            <button onClick={() => { setEditId(p.id); setEditData({ reference: p.reference, designation: p.designation, unite: p.unite, prix_achat: p.prix_achat, page_catalogue: p.page_catalogue }) }} className="text-gray-300 hover:text-blue-500 transition-colors"><Pencil className="w-4 h-4" /></button>
                             <button onClick={() => deleteProduit(p.id)} className="text-gray-300 hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4" /></button>
                           </div>
                         </td>
