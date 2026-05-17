@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/integrations/supabase/client'
-import { ArrowLeft, Pencil, Check, X, Trash2, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react'
+import { useAuth } from '@/hooks/useAuth'
+import { ArrowLeft, Pencil, Check, X, Trash2, ChevronUp, ChevronDown, ChevronsUpDown, Plus } from 'lucide-react'
 
 type SortField = 'fournisseur' | 'reference' | 'designation' | 'unite' | 'prix_achat' | 'statut_import'
 type SortDir = 'asc' | 'desc'
@@ -36,6 +37,10 @@ export default function Articles() {
   const [sortDir, setSortDir] = useState<SortDir>('asc')
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [doublonsOnly, setDoublonsOnly] = useState(false)
+  const [showAddForm, setShowAddForm] = useState(false)
+  const [newData, setNewData] = useState({ fournisseur_id: '', reference: '', designation: '', unite: 'u', prix_achat: 0 })
+  const [adding, setAdding] = useState(false)
+  const { user } = useAuth()
 
   const toggleSort = (field: SortField) => {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
@@ -85,6 +90,25 @@ export default function Articles() {
     for (const id of ids) await supabase.from('produits').update({ actif: false }).eq('id', id)
     setProduits(prev => prev.filter(p => !selected.has(p.id)))
     setSelected(new Set())
+  }
+
+  const addProduit = async () => {
+    if (!newData.fournisseur_id || !newData.designation.trim()) return
+    setAdding(true)
+    const { data } = await supabase.from('produits').insert({
+      artisan_id: user?.id,
+      fournisseur_id: newData.fournisseur_id,
+      reference: newData.reference.trim() || null,
+      designation: newData.designation.trim(),
+      unite: newData.unite.trim() || 'u',
+      prix_achat: newData.prix_achat,
+      statut_import: 'manuel',
+      actif: true,
+    }).select('*, fournisseurs(nom)').single()
+    if (data) setProduits(prev => [...prev, data as Produit])
+    setShowAddForm(false)
+    setNewData({ fournisseur_id: '', reference: '', designation: '', unite: 'u', prix_achat: 0 })
+    setAdding(false)
   }
 
   const toggleOne = (id: string) => setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
@@ -152,6 +176,9 @@ export default function Articles() {
             </button>
           )}
           <span className="ml-auto self-center text-xs text-gray-400">{filtered.length} article{filtered.length !== 1 ? 's' : ''}</span>
+          <button onClick={() => setShowAddForm(true)} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-500 text-white hover:bg-blue-600 transition-colors">
+            <Plus className="w-3.5 h-3.5" />Ajouter
+          </button>
         </div>
 
         {loading ? (
@@ -216,6 +243,50 @@ export default function Articles() {
           </div>
         )}
       </main>
+
+      {showAddForm && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setShowAddForm(false)}>
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4 p-6" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="font-semibold text-gray-900">Ajouter un article</h2>
+              <button onClick={() => setShowAddForm(false)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Fournisseur *</label>
+                <select value={newData.fournisseur_id} onChange={e => setNewData(d => ({ ...d, fournisseur_id: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
+                  <option value="">— Sélectionner —</option>
+                  {fournisseurs.map(([id, nom]) => <option key={id} value={id}>{nom}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Référence</label>
+                <input className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono" placeholder="REF-001" value={newData.reference} onChange={e => setNewData(d => ({ ...d, reference: e.target.value }))} />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Désignation *</label>
+                <input className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" placeholder="Nom de l'article" value={newData.designation} onChange={e => setNewData(d => ({ ...d, designation: e.target.value }))} />
+              </div>
+              <div className="flex gap-3">
+                <div className="flex-1">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Unité</label>
+                  <input className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" placeholder="u" value={newData.unite} onChange={e => setNewData(d => ({ ...d, unite: e.target.value }))} />
+                </div>
+                <div className="flex-1">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">PA HT (€)</label>
+                  <input type="number" step="0.01" min="0" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-right" value={newData.prix_achat} onChange={e => setNewData(d => ({ ...d, prix_achat: parseFloat(e.target.value) || 0 }))} />
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-3 mt-6">
+              <button onClick={() => setShowAddForm(false)} className="flex-1 py-2 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 transition-colors">Annuler</button>
+              <button onClick={addProduit} disabled={adding || !newData.fournisseur_id || !newData.designation.trim()} className="flex-1 py-2 rounded-lg bg-blue-500 text-white text-sm font-medium hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                {adding ? 'Enregistrement…' : 'Ajouter'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
