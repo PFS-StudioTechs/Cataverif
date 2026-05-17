@@ -595,8 +595,8 @@ export default function ImportDetail() {
                           <td className="px-4 py-2 text-center font-mono text-xs text-gray-400">{p.page ?? '—'}</td>
                           <td className="px-2 py-1.5">
                             <div className="flex gap-1 justify-end">
-                              <button onClick={() => validerManquant(origIdx)} className="px-2 py-1 rounded text-xs font-medium bg-green-100 text-green-700 hover:bg-green-200 transition-colors">Valider</button>
-                              <button onClick={() => supprimerManquant(origIdx)} className="p-1 rounded hover:bg-red-100 text-red-400 hover:text-red-600 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
+                              <button onClick={() => validerManquant(origIdx)} title="Valider" className="p-1 rounded hover:bg-green-100 text-green-400 hover:text-green-600 transition-colors"><Check className="w-3.5 h-3.5" /></button>
+                              <button onClick={() => supprimerManquant(origIdx)} title="Supprimer" className="p-1 rounded hover:bg-red-100 text-red-400 hover:text-red-600 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
                             </div>
                           </td>
                         </tr>
