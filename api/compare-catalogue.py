@@ -12,7 +12,7 @@ SUPABASE_SERVICE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
 ANTHROPIC_KEY = os.environ["ANTHROPIC_API_KEY"]
 
 BUCKET = "artisan-documents"
-SONNET = "claude-sonnet-4-6"
+SONNET = "claude-haiku-4-5-20251001"
 PAGES_PER_CHUNK = 10
 
 
