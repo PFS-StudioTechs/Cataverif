@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/integrations/supabase/client'
 import { useAuth } from '@/hooks/useAuth'
-import { ArrowLeft, Pencil, Check, X, Trash2, ChevronUp, ChevronDown, ChevronsUpDown, Plus } from 'lucide-react'
+import { ArrowLeft, Pencil, Check, X, Trash2, ChevronUp, ChevronDown, ChevronsUpDown, Plus, Upload } from 'lucide-react'
 
 type SortField = 'fournisseur' | 'reference' | 'designation' | 'unite' | 'prix_achat' | 'statut_import' | 'page_catalogue'
 type SortDir = 'asc' | 'desc'
@@ -39,6 +39,9 @@ export default function Articles() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [doublonsOnly, setDoublonsOnly] = useState(false)
   const [pageFilter, setPageFilter] = useState('')
+  const [csvPreview, setCsvPreview] = useState<{ reference: string | null; designation: string; unite: string; prix_achat: number; page_catalogue: number | null }[]>([])
+  const [importingCsv, setImportingCsv] = useState(false)
+  const csvInputRef = useRef<HTMLInputElement>(null)
   const [showAddForm, setShowAddForm] = useState(false)
   const [newData, setNewData] = useState({ fournisseur_id: '', reference: '', designation: '', unite: 'u', prix_achat: 0 })
   const [adding, setAdding] = useState(false)
@@ -113,6 +116,46 @@ export default function Articles() {
     setAdding(false)
   }
 
+  const parseCsv = (text: string) => {
+    const lines = text.split('\n').filter(l => l.trim())
+    if (lines.length < 2) return []
+    const sep = lines[0].includes(';') ? ';' : ','
+    const headers = lines[0].split(sep).map(h => h.trim().toLowerCase().replace(/['"]/g, ''))
+    const col = (...names: string[]) => { for (const n of names) { const i = headers.findIndex(h => h.includes(n)); if (i >= 0) return i } return -1 }
+    const refIdx = col('réf', 'ref', 'code', 'article')
+    const desIdx = col('désignation', 'designation', 'libellé', 'nom')
+    const uIdx = col('unité', 'unite')
+    const pIdx = col('prix', 'pa', 'tarif')
+    const pgIdx = col('page')
+    if (desIdx < 0) return []
+    return lines.slice(1).flatMap(line => {
+      const cells = line.split(sep).map(c => c.trim().replace(/^["']|["']$/g, ''))
+      const des = cells[desIdx]?.trim()
+      if (!des) return []
+      const pa = pIdx >= 0 ? parseFloat((cells[pIdx] || '0').replace(',', '.')) || 0 : 0
+      return [{ reference: refIdx >= 0 ? (cells[refIdx]?.trim() || null) : null, designation: des, unite: uIdx >= 0 ? (cells[uIdx]?.trim() || 'u') : 'u', prix_achat: Math.max(0, pa), page_catalogue: pgIdx >= 0 ? (parseInt(cells[pgIdx]) || null) : null }]
+    })
+  }
+
+  const handleCsvFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = ev => setCsvPreview(parseCsv(ev.target?.result as string))
+    reader.readAsText(file, 'utf-8')
+    e.target.value = ''
+  }
+
+  const validerCsv = async () => {
+    if (!csvPreview.length || !fournisseurFilter || fournisseurFilter === 'tous') return
+    setImportingCsv(true)
+    const inserts = csvPreview.map(a => ({ artisan_id: user?.id, fournisseur_id: fournisseurFilter, reference: a.reference, designation: a.designation, unite: a.unite, prix_achat: a.prix_achat, page_catalogue: a.page_catalogue, statut_import: 'manuel', actif: true }))
+    const { data } = await supabase.from('produits').insert(inserts).select('*, fournisseurs(nom)')
+    if (data) setProduits(prev => [...prev, ...(data as Produit[])])
+    setCsvPreview([])
+    setImportingCsv(false)
+  }
+
   const toggleOne = (id: string) => setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
   const toggleAll = (ids: string[]) => setSelected(prev => prev.size === ids.length && ids.every(id => prev.has(id)) ? new Set() : new Set(ids))
 
@@ -185,10 +228,53 @@ export default function Articles() {
             {pageFilter && <button onClick={() => setPageFilter('')} className="text-gray-300 hover:text-gray-500 text-xs">✕</button>}
           </div>
           <span className="ml-auto self-center text-xs text-gray-400">{filtered.length} article{filtered.length !== 1 ? 's' : ''}</span>
+          <input ref={csvInputRef} type="file" accept=".csv" className="hidden" onChange={handleCsvFile} />
+          <button onClick={() => csvInputRef.current?.click()} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-200 text-gray-600 hover:border-blue-300 transition-colors">
+            <Upload className="w-3.5 h-3.5" />CSV
+          </button>
           <button onClick={() => setShowAddForm(true)} disabled={showAddForm} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-50 transition-colors">
             <Plus className="w-3.5 h-3.5" />Ajouter
           </button>
         </div>
+
+        {csvPreview.length > 0 && (
+          <div className="border rounded-lg overflow-hidden bg-green-50/50 mb-4">
+            <div className="px-3 py-2 bg-green-100 text-xs font-medium text-green-800 border-b border-green-200 flex items-center gap-3">
+              <span>Import CSV — {csvPreview.length} articles</span>
+              {fournisseurFilter === 'tous' && <span className="text-orange-600 font-normal">⚠ Sélectionner un fournisseur dans le filtre avant de valider</span>}
+              <div className="ml-auto flex gap-2">
+                <button onClick={validerCsv} disabled={importingCsv || fournisseurFilter === 'tous'} className="px-3 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700 disabled:opacity-50">
+                  {importingCsv ? 'Import…' : `Valider tout (${csvPreview.length})`}
+                </button>
+                <button onClick={() => setCsvPreview([])} className="px-3 py-1 bg-white border border-gray-200 rounded text-xs text-gray-600 hover:bg-gray-50"><X className="w-3 h-3" /></button>
+              </div>
+            </div>
+            <div className="max-h-64 overflow-y-auto">
+              <table className="w-full text-xs">
+                <thead className="bg-gray-50 border-b border-gray-200 sticky top-0">
+                  <tr>
+                    <th className="px-3 py-2 text-left font-medium text-gray-600 w-24">Réf.</th>
+                    <th className="px-3 py-2 text-left font-medium text-gray-600">Désignation</th>
+                    <th className="px-3 py-2 text-left font-medium text-gray-600 w-16">Unité</th>
+                    <th className="px-3 py-2 text-right font-medium text-gray-600 w-24">Prix HT (€)</th>
+                    <th className="px-3 py-2 text-center font-medium text-gray-600 w-14">Page</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {csvPreview.map((a, i) => (
+                    <tr key={i} className="hover:bg-gray-50">
+                      <td className="px-3 py-1.5 font-mono text-gray-500">{a.reference ?? '—'}</td>
+                      <td className="px-3 py-1.5 text-gray-900">{a.designation}</td>
+                      <td className="px-3 py-1.5 text-gray-500">{a.unite}</td>
+                      <td className="px-3 py-1.5 text-right font-mono">{a.prix_achat.toFixed(2)}</td>
+                      <td className="px-3 py-1.5 text-center text-gray-400">{a.page_catalogue ?? '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
 
         {showAddForm && (
           <div className="border rounded-lg overflow-hidden bg-blue-50/50 mb-4">
