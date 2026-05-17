@@ -13,7 +13,7 @@ ANTHROPIC_KEY = os.environ["ANTHROPIC_API_KEY"]
 
 BUCKET = "artisan-documents"
 SONNET = "claude-haiku-4-5-20251001"
-CHUNK_SIZES = [5]
+CHUNK_SIZES = [20, 5]
 
 
 class handler(BaseHTTPRequestHandler):
@@ -135,6 +135,7 @@ Règles :
 - VARIANTES PAR CLASSE : si un article a plusieurs prix selon une classe (VENERE/AMBRA/TERRA/LUCE/FREE/CLASSIC/ANTIQUE/WIDE), extraire UN article par prix. Concaténer code + variante dans r (ex: "U11 FREE", "U11 CLASSIC", "U11 VENERE").
 - TABLEAUX MULTI-COLONNES : quand des colonnes ont des noms de format/dimension (ex: LAMPARQUET, EXTRALAMP, LISTOLAMP, ATENE, LISTONI), une ligne avec N prix = N articles distincts. Construire r avec essence+grade+colonne (ex: r="Chêne Roble VENERE LAMPARQUET" pa=77.00 ; r="Chêne Roble VENERE EXTRALAMP" pa=108.70). Ignorer les cellules tiret (-).
 - MÊME RÉFÉRENCE SUR PAGES DIFFÉRENTES avec prix différents = produits distincts. Inclure le nom de la collection visible sur la page (Dimora, Decora, Uniko, Residence, Carpazi, Tavola3strati...) dans d pour les différencier.
+- DÉCLINAISONS DE TAILLE/DIMENSION : si un tableau liste le même modèle en plusieurs dimensions (ex: 100x13mm, 120x13mm, 140x13mm), extraire UN article par dimension avec la dimension dans d. Ne jamais fusionner plusieurs dimensions en une seule ligne.
 - Extraire TOUTES les lignes ayant un prix, y compris forfaits, suppléments, surcoûts, colles, accessoires.
 
 TEXTE DU CATALOGUE :
