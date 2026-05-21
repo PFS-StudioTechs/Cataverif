@@ -34,7 +34,6 @@ type CompareResult = {
   manquants: Produit[]
   fantomes: Produit[]
   ecarts_prix: EcartPrix[]
-  prix_negocie: EcartPrix[]
 }
 
 type Import = {
@@ -818,41 +817,10 @@ export default function ImportDetail() {
               </div>
             )}
 
-            {(compareResult.prix_negocie?.length ?? 0) > 0 && (
-              <div className="bg-white rounded-xl border border-blue-200 overflow-hidden">
-                <div className="px-4 py-3 bg-blue-50 border-b border-blue-200 flex items-center gap-2">
-                  <TrendingUp className="w-4 h-4 text-blue-500" />
-                  <span className="text-sm font-semibold text-blue-700">Prix négociés ({compareResult.prix_negocie.length})</span>
-                </div>
-                <table className="w-full text-sm min-w-[700px]">
-                  <thead className="bg-gray-50 border-b border-gray-200">
-                    <tr>
-                      <th className="text-left px-4 py-2 font-medium text-gray-600 w-24">Réf.</th>
-                      <th className="text-left px-4 py-2 font-medium text-gray-600">Désignation</th>
-                      <th className="text-right px-4 py-2 font-medium text-gray-600 w-28">Prix catalogue</th>
-                      <th className="text-right px-4 py-2 font-medium text-gray-600 w-28">Prix négocié</th>
-                      <th className="text-right px-4 py-2 font-medium text-gray-600 w-24">Écart</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {compareResult.prix_negocie.map((e, i) => (
-                      <tr key={i} className="bg-blue-50/30">
-                        <td className="px-4 py-2 font-mono text-xs text-gray-500">{e.reference ?? '—'}</td>
-                        <td className="px-4 py-2 text-gray-900">{e.designation}</td>
-                        <td className="px-4 py-2 text-right font-mono">{e.prix_pdf.toFixed(2)}</td>
-                        <td className="px-4 py-2 text-right font-mono text-blue-700 font-semibold">{e.prix_db.toFixed(2)}</td>
-                        <td className="px-4 py-2 text-right font-mono text-blue-600">{e.delta > 0 ? '+' : ''}{e.delta.toFixed(2)} €</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-
             {compareResult.manquants.length === 0 && compareResult.fantomes.length === 0 && compareResult.ecarts_prix.length === 0 && (
               <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-xl px-4 py-3 text-green-700 text-sm">
                 <CheckCircle2 className="w-4 h-4" />
-                <span>Import parfait — aucune anomalie.{(compareResult.prix_negocie?.length ?? 0) > 0 ? ` (${compareResult.prix_negocie.length} prix négociés — non bloquants)` : ''}</span>
+                <span>Import parfait — aucune anomalie.</span>
               </div>
             )}
           </div>

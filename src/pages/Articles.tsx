@@ -152,7 +152,7 @@ export default function Articles() {
     if (!file) return
     const reader = new FileReader()
     reader.onload = ev => setCsvPreview(parseCsv(ev.target?.result as string))
-    reader.readAsText(file, 'utf-8')
+    reader.readAsText(file, 'windows-1252')
     e.target.value = ''
   }
 

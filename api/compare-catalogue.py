@@ -54,7 +54,7 @@ class handler(BaseHTTPRequestHandler):
                 produits_pdf = extract_image(file_bytes, ai)
                 extraction_method = "image_sonnet"
 
-            db_resp = db.from_("produits").select("reference, designation, unite, prix_achat, prix_negocie").eq("import_id", import_id).eq("actif", True).execute()
+            db_resp = db.from_("produits").select("reference, designation, unite, prix_achat").eq("import_id", import_id).eq("actif", True).execute()
             produits_db = db_resp.data or []
 
             result = compare(produits_pdf, produits_db)
@@ -307,7 +307,6 @@ def compare(produits_pdf: list, produits_db: list) -> dict:
     manquants = []
     fantomes = []
     ecarts_prix = []
-    prix_negocie = []
 
     for key, p in index_pdf.items():
         if key not in index_db:
@@ -326,10 +325,7 @@ def compare(produits_pdf: list, produits_db: list) -> dict:
                     "delta": round(delta, 2),
                     "page": p.get("page"),
                 }
-                if d.get("prix_negocie"):
-                    prix_negocie.append(ecart)
-                else:
-                    ecarts_prix.append(ecart)
+                ecarts_prix.append(ecart)
 
     for key, d in index_db.items():
         if key not in index_pdf:
@@ -340,5 +336,4 @@ def compare(produits_pdf: list, produits_db: list) -> dict:
         "manquants": manquants,
         "fantomes": fantomes,
         "ecarts_prix": ecarts_prix,
-        "prix_negocie": prix_negocie,
     }
