@@ -168,6 +168,19 @@ export default function ImportDetail() {
     setCompareResult(prev => prev ? { ...prev, fantomes: prev.fantomes.filter(f => f.id !== id) } : prev)
   }
 
+  const dismissEcart = (index: number) => {
+    setCompareResult(prev => prev ? { ...prev, ecarts_prix: prev.ecarts_prix.filter((_, i) => i !== index) } : prev)
+  }
+
+  const validerEcart = async (ecart: EcartPrix, index: number) => {
+    if (!imp) return
+    await supabase.from('produits')
+      .update({ prix_achat: ecart.prix_pdf })
+      .eq('import_id', imp.id)
+      .eq('reference', ecart.reference)
+    setCompareResult(prev => prev ? { ...prev, ecarts_prix: prev.ecarts_prix.filter((_, i) => i !== index) } : prev)
+  }
+
 
   const handleImageUploadAll = async (productId: string, file: File) => {
     const ext = file.name.split('.').pop()?.toLowerCase() ?? 'jpg'
@@ -782,6 +795,7 @@ export default function ImportDetail() {
                       <th className="text-right px-4 py-2 font-medium text-gray-600 w-28">Prix DB</th>
                       <th className="text-right px-4 py-2 font-medium text-gray-600 w-24">Écart</th>
                       <th className="text-center px-4 py-2 font-medium text-gray-600 w-16">Page</th>
+                      <th className="w-20"></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -795,6 +809,16 @@ export default function ImportDetail() {
                           {e.delta > 0 ? '+' : ''}{e.delta.toFixed(2)} €
                         </td>
                         <td className="px-4 py-2 text-center font-mono text-xs text-gray-400">{e.page ?? '—'}</td>
+                        <td className="px-2 py-1.5">
+                          <div className="flex items-center gap-1 justify-center">
+                            <button onClick={() => validerEcart(e, i)} title="Valider le prix PDF en base" className="p-1 rounded hover:bg-green-100 text-green-500 hover:text-green-700 transition-colors">
+                              <Check className="w-3.5 h-3.5" />
+                            </button>
+                            <button onClick={() => dismissEcart(i)} title="Écart faux — ignorer" className="p-1 rounded hover:bg-red-100 text-red-400 hover:text-red-600 transition-colors">
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
