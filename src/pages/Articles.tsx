@@ -48,7 +48,7 @@ export default function Articles() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [doublonsOnly, setDoublonsOnly] = useState(false)
   const [pageFilter, setPageFilter] = useState('')
-  const [fournisseursAll, setFournisseursAll] = useState<{ id: string; nom: string }[]>([])
+  const [fournisseursAll, setFournisseursAll] = useState<{ id: string; nom: string; catalogue_fournisseur_id: string | null }[]>([])
   const [csvPreview, setCsvPreview] = useState<CsvRow[]>([])
   const [importingCsv, setImportingCsv] = useState(false)
   const csvInputRef = useRef<HTMLInputElement>(null)
@@ -75,12 +75,12 @@ export default function Articles() {
     setLoading(true)
     const [{ data }, { data: fData }] = await Promise.all([
       supabase.from('produits').select('*').eq('actif', true).order('fournisseur_id').order('designation'),
-      supabase.from('fournisseurs').select('id, nom'),
+      supabase.from('fournisseurs').select('id, nom, catalogue_fournisseur_id'),
     ])
-    const fournisseursMap = new Map((fData ?? []).map((f: { id: string; nom: string }) => [f.id, f.nom]))
+    const fournisseursMap = new Map((fData ?? []).filter((f: any) => f.catalogue_fournisseur_id).map((f: any) => [f.catalogue_fournisseur_id, f.nom]))
     const produits = (data ?? []).map((p: Produit) => ({ ...p, fournisseurs: p.fournisseur_id ? { nom: fournisseursMap.get(p.fournisseur_id) ?? '—' } : null }))
     setProduits(produits)
-    setFournisseursAll((fData ?? []) as { id: string; nom: string }[])
+    setFournisseursAll((fData ?? []) as { id: string; nom: string; catalogue_fournisseur_id: string | null }[])
     setLoading(false)
   }
 
@@ -163,17 +163,17 @@ export default function Articles() {
     const csvHasFournisseur = csvPreview.some(a => a.fournisseur_nom)
     if (!csvHasFournisseur && fournisseurFilter === 'tous') return
     setImportingCsv(true)
-    const nameMap = new Map(fournisseursAll.map(f => [f.nom.toLowerCase(), f.id]))
+    const nameMap = new Map(fournisseursAll.filter(f => f.catalogue_fournisseur_id).map(f => [f.nom.toLowerCase(), f.catalogue_fournisseur_id!]))
     const inserts = csvPreview.flatMap(a => {
       let fid: string | null = null
       if (a.fournisseur_nom) fid = nameMap.get(a.fournisseur_nom.toLowerCase()) ?? null
       if (!fid && fournisseurFilter !== 'tous') fid = fournisseurFilter
       if (!fid) return []
-      return [{ artisan_id: user?.id, fournisseur_id: fid, reference: a.reference, designation: a.designation, unite: a.unite, prix_achat: a.prix_achat, page_catalogue: a.page_catalogue, statut_import: 'manuel', actif: true }]
+      return [{ artisan_id: user?.id, fournisseur_id: fid, reference: a.reference, designation: a.designation, unite: a.unite, prix_achat: a.prix_achat, page_catalogue: a.page_catalogue, statut_import: 'valide', actif: true }]
     })
     const { data } = await supabase.from('produits').insert(inserts).select('*')
     if (data) {
-      const fournisseursMap = new Map(fournisseursAll.map(f => [f.id, f.nom]))
+      const fournisseursMap = new Map(fournisseursAll.filter(f => f.catalogue_fournisseur_id).map(f => [f.catalogue_fournisseur_id!, f.nom]))
       const mapped = (data as Produit[]).map(p => ({ ...p, fournisseurs: p.fournisseur_id ? { nom: fournisseursMap.get(p.fournisseur_id) ?? '—' } : null }))
       setProduits(prev => [...prev, ...mapped])
     }
