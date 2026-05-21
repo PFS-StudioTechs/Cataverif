@@ -74,10 +74,12 @@ export default function Articles() {
   const load = async () => {
     setLoading(true)
     const [{ data }, { data: fData }] = await Promise.all([
-      supabase.from('produits').select('*, fournisseurs(nom)').eq('actif', true).order('fournisseur_id').order('designation'),
+      supabase.from('produits').select('*').eq('actif', true).order('fournisseur_id').order('designation'),
       supabase.from('fournisseurs').select('id, nom'),
     ])
-    setProduits((data as Produit[]) ?? [])
+    const fournisseursMap = new Map((fData ?? []).map((f: { id: string; nom: string }) => [f.id, f.nom]))
+    const produits = (data ?? []).map((p: Produit) => ({ ...p, fournisseurs: p.fournisseur_id ? { nom: fournisseursMap.get(p.fournisseur_id) ?? '—' } : null }))
+    setProduits(produits)
     setFournisseursAll((fData ?? []) as { id: string; nom: string }[])
     setLoading(false)
   }
@@ -169,8 +171,12 @@ export default function Articles() {
       if (!fid) return []
       return [{ artisan_id: user?.id, fournisseur_id: fid, reference: a.reference, designation: a.designation, unite: a.unite, prix_achat: a.prix_achat, page_catalogue: a.page_catalogue, statut_import: 'manuel', actif: true }]
     })
-    const { data } = await supabase.from('produits').insert(inserts).select('*, fournisseurs(nom)')
-    if (data) setProduits(prev => [...prev, ...(data as Produit[])])
+    const { data } = await supabase.from('produits').insert(inserts).select('*')
+    if (data) {
+      const fournisseursMap = new Map(fournisseursAll.map(f => [f.id, f.nom]))
+      const mapped = (data as Produit[]).map(p => ({ ...p, fournisseurs: p.fournisseur_id ? { nom: fournisseursMap.get(p.fournisseur_id) ?? '—' } : null }))
+      setProduits(prev => [...prev, ...mapped])
+    }
     setCsvPreview([])
     setImportingCsv(false)
   }
