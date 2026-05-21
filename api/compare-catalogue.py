@@ -54,7 +54,7 @@ class handler(BaseHTTPRequestHandler):
                 produits_pdf = extract_image(file_bytes, ai)
                 extraction_method = "image_sonnet"
 
-            db_resp = db.from_("produits").select("reference, designation, unite, prix_achat").eq("import_id", import_id).eq("actif", True).execute()
+            db_resp = db.from_("produits").select("id, reference, designation, unite, prix_achat").eq("import_id", import_id).eq("actif", True).execute()
             produits_db = db_resp.data or []
 
             result = compare(produits_pdf, produits_db)
