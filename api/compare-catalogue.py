@@ -2,7 +2,6 @@ import os
 import json
 import csv
 import io
-import fitz
 import anthropic
 from supabase import create_client
 from http.server import BaseHTTPRequestHandler
@@ -12,8 +11,9 @@ SUPABASE_SERVICE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
 ANTHROPIC_KEY = os.environ["ANTHROPIC_API_KEY"]
 
 BUCKET = "artisan-documents"
+EXTRACTION_PATH = "extraction"
 SONNET = "claude-haiku-4-5-20251001"
-CHUNK_SIZES = [20, 5]
+CHUNK_SIZE = 20
 
 
 class handler(BaseHTTPRequestHandler):
@@ -34,34 +34,49 @@ class handler(BaseHTTPRequestHandler):
             db = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
             ai = anthropic.Anthropic(api_key=ANTHROPIC_KEY)
 
-            imp = db.from_("catalogue_imports").select("fichier_url, fichier_type, artisan_id").eq("id", import_id).single().execute()
+            imp = db.from_("catalogue_imports").select("statut, artisan_id, fournisseur_id").eq("id", import_id).single().execute()
             if not imp.data:
                 self._json({"error": "Import introuvable"}, 404)
                 return
 
-            fichier_url = imp.data["fichier_url"]
-            fichier_type = imp.data["fichier_type"]
+            statut = imp.data["statut"]
 
-            file_bytes = db.storage.from_(BUCKET).download(fichier_url)
+            storage_path = f"{EXTRACTION_PATH}/{import_id}.csv"
+            try:
+                csv_bytes = db.storage.from_(BUCKET).download(storage_path)
+            except Exception:
+                self._json({"error": "Fichier d'extraction introuvable. Lancez d'abord l'extraction texte."}, 400)
+                return
 
-            if fichier_type == "csv":
-                produits_pdf = parse_csv(file_bytes)
-                extraction_method = "csv"
-            elif fichier_type == "pdf":
-                produits_pdf = extract_pdf(file_bytes, ai)
-                extraction_method = "pdf_text_sonnet"
+            csv_text = csv_bytes.decode("utf-8-sig")
+            reader = csv.DictReader(io.StringIO(csv_text), delimiter=";")
+            headers = [h.lower().strip() for h in (reader.fieldnames or [])]
+
+            if is_structured_csv(headers):
+                produits_source = parse_structured_csv(csv_text)
+                extraction_method = "csv_structure"
             else:
-                produits_pdf = extract_image(file_bytes, ai)
-                extraction_method = "image_sonnet"
+                produits_source = extract_from_text_csv(csv_text, ai)
+                extraction_method = "csv_texte_claude"
 
-            db_resp = db.from_("produits").select("id, reference, designation, unite, prix_achat").eq("import_id", import_id).eq("actif", True).execute()
-            produits_db = db_resp.data or []
+            if statut == "termine":
+                db_resp = db.from_("produits").select("id, reference, designation, unite, prix_achat").eq("import_id", import_id).eq("actif", True).execute()
+                produits_db = db_resp.data or []
 
-            result = compare(produits_pdf, produits_db)
-            result["total_db"] = len(produits_db)
-            result["extraction_method"] = extraction_method
+                result = compare(produits_source, produits_db)
+                result["total_db"] = len(produits_db)
+                result["extraction_method"] = extraction_method
+                result["mode"] = "comparaison"
+                self._json(result)
 
-            self._json(result)
+            else:
+                result = {
+                    "mode": "import",
+                    "extraction_method": extraction_method,
+                    "total_source": len(produits_source),
+                    "articles": produits_source,
+                }
+                self._json(result)
 
         except Exception as e:
             self._json({"error": str(e)}, 500)
@@ -81,52 +96,70 @@ class handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
 
-def page_to_ordered_text(page) -> str:
-    blocks = page.get_text("blocks")
-    text_blocks = [(b[0], b[1], b[4].strip()) for b in blocks if b[6] == 0 and b[4].strip()]
-    if text_blocks:
-        text_blocks.sort(key=lambda b: (b[1], b[0]))
-        return "\n\n".join(t for _, _, t in text_blocks)
-
-    words = page.get_text("words")
-    if not words:
-        return ""
-    words_sorted = sorted(words, key=lambda w: (w[1], w[0]))
-    lines = []
-    current_line_words = []
-    current_y = None
-    for w in words_sorted:
-        y0, word = w[1], w[4]
-        if current_y is None or abs(y0 - current_y) > 5:
-            if current_line_words:
-                lines.append(" ".join(current_line_words))
-            current_line_words = [word]
-            current_y = y0
-        else:
-            current_line_words.append(word)
-    if current_line_words:
-        lines.append(" ".join(current_line_words))
-    return "\n".join(lines)
+def is_structured_csv(headers: list) -> bool:
+    required = {"designation", "prix_achat"}
+    return required.issubset(set(headers))
 
 
-def extract_pdf(file_bytes: bytes, ai: anthropic.Anthropic) -> list:
-    doc = fitz.open(stream=file_bytes, filetype="pdf")
-    pages_text = []
-    for page_num, page in enumerate(doc, start=1):
-        text = page_to_ordered_text(page)
-        if text:
-            pages_text.append((page_num, text))
-    doc.close()
+def parse_structured_csv(csv_text: str) -> list:
+    reader = csv.DictReader(io.StringIO(csv_text), delimiter=";")
+    headers = [h.lower().strip() for h in (reader.fieldnames or [])]
 
-    if not pages_text:
+    def col(*names):
+        for n in names:
+            for h in headers:
+                if n in h:
+                    return h
+        return None
+
+    ref_col = col("ref", "reference", "code", "article")
+    des_col = col("designation", "désignation", "libellé", "nom")
+    u_col = col("unite", "unité")
+    p_col = col("prix_achat", "prix", "pa", "tarif")
+
+    if not des_col:
         return []
 
+    result = []
+    for row in reader:
+        des = row.get(des_col, "").strip()
+        if not des:
+            continue
+        try:
+            pa = float(row.get(p_col, "0").replace(",", ".")) if p_col else 0.0
+        except ValueError:
+            pa = 0.0
+        result.append({
+            "reference": row.get(ref_col, "").strip() or None if ref_col else None,
+            "designation": des,
+            "unite": row.get(u_col, "u").strip() or "u" if u_col else "u",
+            "prix_achat": max(0.0, pa),
+            "page": None,
+        })
+    return result
+
+
+def extract_from_text_csv(csv_text: str, ai: anthropic.Anthropic) -> list:
+    reader = csv.DictReader(io.StringIO(csv_text), delimiter=";")
+    rows = list(reader)
+
+    pages: dict = {}
+    for row in rows:
+        try:
+            page = int(row.get("page") or 0)
+        except ValueError:
+            page = 0
+        texte = (row.get("texte") or "").strip()
+        if texte:
+            pages.setdefault(page, []).append(texte)
+
+    pages_text = [(p, "\n\n".join(blocs)) for p, blocs in sorted(pages.items()) if blocs]
+
     all_produits = []
-    for chunk_size in CHUNK_SIZES:
-        for i in range(0, len(pages_text), chunk_size):
-            chunk_pages = pages_text[i:i + chunk_size]
-            chunk = "\n\n---\n\n".join(f"=== PAGE {n} ===\n{t}" for n, t in chunk_pages)
-            all_produits.extend(call_claude_text(chunk, ai))
+    for i in range(0, len(pages_text), CHUNK_SIZE):
+        chunk_pages = pages_text[i:i + CHUNK_SIZE]
+        chunk = "\n\n---\n\n".join(f"=== PAGE {n} ===\n{t}" for n, t in chunk_pages)
+        all_produits.extend(call_claude_text(chunk, ai))
 
     return deduplicate_smart(all_produits)
 
@@ -156,68 +189,8 @@ TEXTE DU CATALOGUE :
     return parse_ai(resp.content[0].text or "")
 
 
-def extract_image(file_bytes: bytes, ai: anthropic.Anthropic) -> list:
-    import base64
-    b64 = base64.b64encode(file_bytes).decode()
-    prompt = """Extrais TOUS les produits de ce catalogue fournisseur sans en omettre aucun.
-Pour chaque produit : référence article, désignation complète, unité de vente, prix HT en euros.
-Réponds UNIQUEMENT en JSON compact sur une seule ligne :
-{"p":[{"r":"ref_ou_null","d":"designation","u":"unite","pa":0.00}]}"""
-
-    resp = ai.messages.create(
-        model=SONNET,
-        max_tokens=8192,
-        messages=[{"role": "user", "content": [
-            {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": b64}},
-            {"type": "text", "text": prompt}
-        ]}]
-    )
-    return parse_ai(resp.content[0].text or "")
-
-
-def parse_csv(file_bytes: bytes) -> list:
-    text = file_bytes.decode("utf-8", errors="replace")
-    lines = [l for l in text.splitlines() if l.strip()]
-    if len(lines) < 2:
-        return []
-    sep = ";" if ";" in lines[0] else ","
-    reader = csv.DictReader(io.StringIO(text), delimiter=sep)
-    headers = [h.lower().strip() for h in (reader.fieldnames or [])]
-
-    def col(*names):
-        for n in names:
-            for h in headers:
-                if n in h:
-                    return h
-        return None
-
-    ref_col = col("ref", "code", "article")
-    des_col = col("désignation", "designation", "libellé", "nom")
-    u_col = col("unité", "unite")
-    p_col = col("prix", "pa", "tarif")
-
-    if not des_col:
-        return []
-
-    result = []
-    for row in reader:
-        des = row.get(des_col, "").strip()
-        if not des:
-            continue
-        try:
-            pa = float(row.get(p_col, "0").replace(",", ".")) if p_col else 0.0
-        except ValueError:
-            pa = 0.0
-        result.append({
-            "reference": row.get(ref_col, "").strip() or None if ref_col else None,
-            "designation": des,
-            "unite": row.get(u_col, "u").strip() or "u" if u_col else "u",
-            "prix_achat": max(0.0, pa),
-        })
-    return result
-
-
 def parse_ai(text: str) -> list:
+    import re
     text = text.strip()
     start = text.find("{")
     end = text.rfind("}") + 1
@@ -230,7 +203,6 @@ def parse_ai(text: str) -> list:
     except Exception:
         pass
     result = []
-    import re
     for m in re.finditer(r'\{[^{}]+\}', text):
         try:
             p = normalize(json.loads(m.group()))
@@ -261,26 +233,15 @@ def normalize(obj: dict) -> dict:
     }
 
 
-def deduplicate(produits: list) -> list:
-    seen = set()
-    result = []
-    for p in produits:
-        key = f"{p.get('reference') or ''}|{p.get('designation', '').lower()}"
-        if key not in seen:
-            seen.add(key)
-            result.append(p)
-    return result
-
-
 def deduplicate_smart(produits: list) -> list:
     seen = set()
     result = []
     for p in produits:
-        ref = (p.get('reference') or '').strip().lower()
-        des = (p.get('designation') or '').strip().lower()
-        unite = (p.get('unite') or '').strip().lower()
-        prix_cents = int(round((p.get('prix_achat') or 0) * 100))
-        page = p.get('page') or 0
+        ref = (p.get("reference") or "").strip().lower()
+        des = (p.get("designation") or "").strip().lower()
+        unite = (p.get("unite") or "").strip().lower()
+        prix_cents = int(round((p.get("prix_achat") or 0) * 100))
+        page = p.get("page") or 0
         key = f"{ref}|{des}|{unite}|{prix_cents}|{page}"
         if key not in seen:
             seen.add(key)
@@ -299,14 +260,23 @@ def build_index(produits: list) -> dict:
     return index
 
 
-def compare(produits_pdf: list, produits_db: list) -> dict:
-    pdf_dedup = deduplicate(produits_pdf)
+def deduplicate(produits: list) -> list:
+    seen = set()
+    result = []
+    for p in produits:
+        key = f"{p.get('reference') or ''}|{p.get('designation', '').lower()}"
+        if key not in seen:
+            seen.add(key)
+            result.append(p)
+    return result
+
+
+def compare(produits_source: list, produits_db: list) -> dict:
+    pdf_dedup = deduplicate(produits_source)
     index_pdf = build_index(pdf_dedup)
     index_db = build_index(produits_db)
 
-    manquants = []
-    fantomes = []
-    ecarts_prix = []
+    manquants, fantomes, ecarts_prix = [], [], []
 
     for key, p in index_pdf.items():
         if key not in index_db:
@@ -315,7 +285,7 @@ def compare(produits_pdf: list, produits_db: list) -> dict:
             d = index_db[key]
             delta = abs((p.get("prix_achat") or 0) - (d.get("prix_achat") or 0))
             if delta > 0.02:
-                ecart = {
+                ecarts_prix.append({
                     "reference": p.get("reference"),
                     "designation": p.get("designation"),
                     "unite_pdf": p.get("unite"),
@@ -324,8 +294,7 @@ def compare(produits_pdf: list, produits_db: list) -> dict:
                     "prix_db": d.get("prix_achat"),
                     "delta": round(delta, 2),
                     "page": p.get("page"),
-                }
-                ecarts_prix.append(ecart)
+                })
 
     for key, d in index_db.items():
         if key not in index_pdf:

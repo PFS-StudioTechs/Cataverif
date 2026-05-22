@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '@/integrations/supabase/client'
-import { ArrowLeft, CheckCircle2, AlertTriangle, HelpCircle, Pencil, Check, X, GitCompare, PackageMinus, PackagePlus, TrendingUp, Download, Trash2 } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, AlertTriangle, HelpCircle, Pencil, Check, X, GitCompare, PackageMinus, PackagePlus, TrendingUp, Download, Trash2, FileText, Upload } from 'lucide-react'
 
 type Produit = {
   id: string
@@ -28,12 +28,20 @@ type EcartPrix = {
 }
 
 type CompareResult = {
+  mode: 'comparaison'
   total_pdf: number
   total_db: number
   extraction_method?: string
   manquants: Produit[]
   fantomes: Produit[]
   ecarts_prix: EcartPrix[]
+}
+
+type ImportModeResult = {
+  mode: 'import'
+  extraction_method?: string
+  total_source: number
+  articles: Produit[]
 }
 
 type Import = {
@@ -82,6 +90,13 @@ export default function ImportDetail() {
   const [filterAll, setFilterAll] = useState<'tous' | 'ia' | 'valide' | 'manuel'>('tous')
   const [sortManquantsCol, setSortManquantsCol] = useState<'reference' | 'designation' | 'unite' | 'prix_achat' | 'page' | null>(null)
   const [sortManquantsDir, setSortManquantsDir] = useState<'asc' | 'desc'>('asc')
+  const [extractingText, setExtractingText] = useState(false)
+  const [extractTextMsg, setExtractTextMsg] = useState<string | null>(null)
+  const [extractionStoragePath, setExtractionStoragePath] = useState<string | null>(null)
+  const [uploadingRetouched, setUploadingRetouched] = useState(false)
+  const [uploadRetouchedMsg, setUploadRetouchedMsg] = useState<string | null>(null)
+  const [importResult, setImportResult] = useState<ImportModeResult | null>(null)
+  const [selectedArticles, setSelectedArticles] = useState<Set<number>>(new Set())
 
   const toggleManquant = (i: number) => setSelectedManquants(prev => {
     const n = new Set(prev); n.has(i) ? n.delete(i) : n.add(i); return n
@@ -224,6 +239,10 @@ export default function ImportDetail() {
         setLoading(false)
         const saved = localStorage.getItem(`cataverif-compare-${id}`)
         if (saved) { try { setCompareResult(JSON.parse(saved)) } catch {} }
+        const { data: extractionFiles } = await supabase.storage.from('artisan-documents').list('extraction', { search: `${id}.csv` })
+        if (extractionFiles?.some(f => f.name === `${id}.csv`)) {
+          setExtractionStoragePath(`extraction/${id}.csv`)
+        }
       })
   }, [id])
 
@@ -252,11 +271,56 @@ export default function ImportDetail() {
     setSaving(false)
   }
 
+  const extractText = async () => {
+    if (!imp) return
+    setExtractingText(true)
+    setExtractTextMsg(null)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const resp = await fetch('/api/extract-text', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ import_id: id }),
+      })
+      let result: Record<string, unknown>
+      try { result = await resp.json() } catch { result = { error: `Erreur serveur (${resp.status})` } }
+      if (!resp.ok || result.error) throw new Error(typeof result.error === 'string' ? result.error : 'Erreur serveur')
+      setExtractionStoragePath(result.storage_path as string)
+      setExtractTextMsg(`Extraction terminée — ${result.nb_blocs} blocs extraits`)
+      if (result.url) window.open(result.url as string, '_blank')
+    } catch (e) {
+      setExtractTextMsg(`Erreur : ${e instanceof Error ? e.message : 'Erreur inconnue'}`)
+    } finally {
+      setExtractingText(false)
+    }
+  }
+
+  const uploadRetouched = async (file: File) => {
+    if (!id) return
+    setUploadingRetouched(true)
+    setUploadRetouchedMsg(null)
+    try {
+      const path = `extraction/${id}.csv`
+      const { error } = await supabase.storage.from('artisan-documents').upload(path, file, {
+        contentType: 'text/csv',
+        upsert: true,
+      })
+      if (error) throw new Error(error.message)
+      setExtractionStoragePath(path)
+      setUploadRetouchedMsg('Fichier retravaillé chargé — prêt pour comparaison')
+    } catch (e) {
+      setUploadRetouchedMsg(`Erreur : ${e instanceof Error ? e.message : 'Erreur inconnue'}`)
+    } finally {
+      setUploadingRetouched(false)
+    }
+  }
+
   const runCompare = async () => {
     if (!imp) return
     setComparing(true)
     setCompareError(null)
     setCompareResult(null)
+    setImportResult(null)
     setCompareProgress('Analyse en cours…')
 
     try {
@@ -266,9 +330,14 @@ export default function ImportDetail() {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
         body: JSON.stringify({ import_id: id }),
       })
-      const result = await resp.json()
-      if (!resp.ok || result.error) throw new Error(typeof result.error === 'string' ? result.error : (result.error?.message ?? JSON.stringify(result.error) ?? 'Erreur serveur'))
-      setCompareResult(result as CompareResult)
+      let result: Record<string, unknown>
+      try { result = await resp.json() } catch { result = { error: `Erreur serveur (${resp.status})` } }
+      if (!resp.ok || result.error) throw new Error(typeof result.error === 'string' ? result.error : (result.error as { message?: string })?.message ?? 'Erreur serveur')
+      if (result.mode === 'import') {
+        setImportResult(result as unknown as ImportModeResult)
+      } else {
+        setCompareResult(result as unknown as CompareResult)
+      }
     } catch (e) {
       setCompareError(e instanceof Error ? e.message : 'Erreur inconnue')
     } finally {
@@ -403,37 +472,52 @@ export default function ImportDetail() {
             Import du {new Date(imp.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })} · {produits.length} produits
           </p>
         </div>
-        <button
-          onClick={extractImages}
-          disabled={extractingImages || imp.fichier_type !== 'pdf'}
-          className="flex items-center gap-1.5 text-sm border border-purple-300 text-purple-700 rounded-lg px-4 py-2 hover:bg-purple-50 transition-colors disabled:opacity-40"
-        >
-          <span>{extractingImages ? 'Extraction en cours…' : 'Extraire images'}</span>
-        </button>
-        <button
-          onClick={downloadCatalogue}
-          disabled={downloading}
-          className="flex items-center gap-1.5 text-sm border border-gray-300 text-gray-600 rounded-lg px-4 py-2 hover:bg-gray-50 transition-colors"
-        >
-          <Download className="w-4 h-4" />
-          <span>{downloading ? 'Téléchargement…' : 'Télécharger catalogue'}</span>
-        </button>
-        <button
-          onClick={runCompare}
-          disabled={comparing}
-          className="flex items-center gap-1.5 text-sm border border-blue-300 text-blue-700 rounded-lg px-4 py-2 hover:bg-blue-50 transition-colors"
-        >
-          <GitCompare className={`w-4 h-4 ${comparing ? 'animate-spin' : ''}`} />
-          <span>{compareProgress ?? (comparing ? 'Analyse en cours…' : 'Comparer avec fichier source')}</span>
-        </button>
-        {counts.ia > 0 && (
+        <div className="flex flex-col gap-2">
           <button
-            onClick={validateAll}
-            className="flex items-center gap-1.5 text-sm bg-green-600 text-white rounded-lg px-4 py-2 hover:bg-green-700 transition-colors"
+            onClick={extractImages}
+            disabled={extractingImages || imp.fichier_type !== 'pdf'}
+            className="flex items-center gap-1.5 text-sm border border-purple-300 text-purple-700 rounded-lg px-4 py-2 hover:bg-purple-50 transition-colors disabled:opacity-40"
           >
-            <CheckCircle2 className="w-4 h-4" /> Valider tout ({counts.ia})
+            <span>{extractingImages ? 'Extraction en cours…' : 'Extraire images'}</span>
           </button>
-        )}
+          <button
+            onClick={downloadCatalogue}
+            disabled={downloading}
+            className="flex items-center gap-1.5 text-sm border border-gray-300 text-gray-600 rounded-lg px-4 py-2 hover:bg-gray-50 transition-colors"
+          >
+            <Download className="w-4 h-4" />
+            <span>{downloading ? 'Téléchargement…' : 'Télécharger catalogue'}</span>
+          </button>
+          <button
+            onClick={extractText}
+            disabled={extractingText || imp.fichier_type !== 'pdf'}
+            className="flex items-center gap-1.5 text-sm border border-indigo-300 text-indigo-700 rounded-lg px-4 py-2 hover:bg-indigo-50 transition-colors disabled:opacity-40"
+          >
+            <FileText className="w-4 h-4" />
+            <span>{extractingText ? 'Extraction en cours…' : 'Extraire texte (CSV)'}</span>
+          </button>
+          <label className={`flex items-center gap-1.5 text-sm border border-teal-300 text-teal-700 rounded-lg px-4 py-2 hover:bg-teal-50 transition-colors cursor-pointer ${uploadingRetouched ? 'opacity-40 pointer-events-none' : ''}`}>
+            <Upload className="w-4 h-4" />
+            <span>{uploadingRetouched ? 'Upload en cours…' : 'Uploader extraction retravaillée'}</span>
+            <input type="file" accept=".csv,text/csv" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) uploadRetouched(f); e.target.value = '' }} />
+          </label>
+          <button
+            onClick={runCompare}
+            disabled={comparing || !extractionStoragePath}
+            className="flex items-center gap-1.5 text-sm border border-blue-300 text-blue-700 rounded-lg px-4 py-2 hover:bg-blue-50 transition-colors disabled:opacity-40"
+          >
+            <GitCompare className={`w-4 h-4 ${comparing ? 'animate-spin' : ''}`} />
+            <span>{compareProgress ?? (comparing ? 'Analyse en cours…' : 'Comparer avec fichier source')}</span>
+          </button>
+          {counts.ia > 0 && (
+            <button
+              onClick={validateAll}
+              className="flex items-center gap-1.5 text-sm bg-green-600 text-white rounded-lg px-4 py-2 hover:bg-green-700 transition-colors"
+            >
+              <CheckCircle2 className="w-4 h-4" /> Valider tout ({counts.ia})
+            </button>
+          )}
+        </div>
       </header>
 
       <main className="max-w-6xl mx-auto px-6 py-6">
@@ -600,6 +684,17 @@ export default function ImportDetail() {
             </tbody>
           </table>
         </div>
+        {/* Messages extraction texte / upload */}
+        {extractTextMsg && (
+          <div className={`mt-4 rounded-xl px-4 py-3 text-sm ${extractTextMsg.startsWith('Erreur') ? 'bg-red-50 border border-red-200 text-red-700' : 'bg-indigo-50 border border-indigo-200 text-indigo-700'}`}>
+            {extractTextMsg}
+          </div>
+        )}
+        {uploadRetouchedMsg && (
+          <div className={`mt-2 rounded-xl px-4 py-3 text-sm ${uploadRetouchedMsg.startsWith('Erreur') ? 'bg-red-50 border border-red-200 text-red-700' : 'bg-teal-50 border border-teal-200 text-teal-700'}`}>
+            {uploadRetouchedMsg}
+          </div>
+        )}
         {/* Résultats de comparaison */}
         {extractMsg && (
           <div className={`mt-4 rounded-xl px-4 py-3 text-sm ${extractMsg.startsWith('Erreur') ? 'bg-red-50 border border-red-200 text-red-700' : 'bg-purple-50 border border-purple-200 text-purple-700'}`}>
@@ -612,6 +707,92 @@ export default function ImportDetail() {
             Erreur : {compareError}
           </div>
         )}
+
+        {importResult && (
+          <div className="mt-6 space-y-4">
+            <div className="flex items-center gap-4 text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-4 py-2">
+              <span>Articles extraits : <strong className="text-gray-700">{importResult.total_source}</strong></span>
+              {importResult.extraction_method && <span className="ml-auto font-mono">{importResult.extraction_method}</span>}
+            </div>
+            <div className="bg-white rounded-xl border border-blue-200 overflow-hidden">
+              <div className="px-4 py-3 bg-blue-50 border-b border-blue-200 flex items-center gap-2">
+                <PackagePlus className="w-4 h-4 text-blue-500" />
+                <span className="text-sm font-semibold text-blue-700">Articles à importer ({importResult.articles.length})</span>
+                <div className="ml-auto flex gap-2">
+                  {selectedArticles.size > 0 && (
+                    <button
+                      onClick={async () => {
+                        if (!imp) return
+                        const toImport = importResult.articles.filter((_, i) => selectedArticles.has(i))
+                        await supabase.from('produits').insert(toImport.map(p => ({
+                          artisan_id: imp.artisan_id, fournisseur_id: imp.fournisseur_id, import_id: id,
+                          reference: p.reference, designation: p.designation, unite: p.unite, prix_achat: p.prix_achat,
+                          page_catalogue: p.page ?? null, statut_import: 'valide',
+                        })))
+                        setImportResult(prev => prev ? { ...prev, articles: prev.articles.filter((_, i) => !selectedArticles.has(i)) } : prev)
+                        setSelectedArticles(new Set())
+                      }}
+                      className="text-xs px-2 py-1 rounded border border-blue-400 text-blue-700 bg-blue-50 hover:bg-blue-100 transition-colors"
+                    >
+                      Valider sélection ({selectedArticles.size})
+                    </button>
+                  )}
+                  <button
+                    onClick={async () => {
+                      if (!imp) return
+                      await supabase.from('produits').insert(importResult.articles.map(p => ({
+                        artisan_id: imp.artisan_id, fournisseur_id: imp.fournisseur_id, import_id: id,
+                        reference: p.reference, designation: p.designation, unite: p.unite, prix_achat: p.prix_achat,
+                        page_catalogue: p.page ?? null, statut_import: 'valide',
+                      })))
+                      setImportResult(null)
+                    }}
+                    className="text-xs px-2 py-1 rounded border border-green-500 text-green-700 bg-green-50 hover:bg-green-100 transition-colors font-medium"
+                  >
+                    Tout importer ({importResult.articles.length})
+                  </button>
+                </div>
+              </div>
+              <table className="w-full text-sm min-w-[700px]">
+                <thead className="bg-gray-50 border-b border-gray-200">
+                  <tr>
+                    <th className="w-8 px-3 py-2">
+                      <input type="checkbox"
+                        checked={selectedArticles.size === importResult.articles.length && importResult.articles.length > 0}
+                        onChange={() => setSelectedArticles(prev => prev.size === importResult.articles.length ? new Set() : new Set(importResult.articles.map((_, i) => i)))}
+                        className="cursor-pointer"
+                      />
+                    </th>
+                    <th className="text-left px-4 py-2 font-medium text-gray-600 w-24">Réf.</th>
+                    <th className="text-left px-4 py-2 font-medium text-gray-600">Désignation</th>
+                    <th className="text-left px-4 py-2 font-medium text-gray-600 w-20">Unité</th>
+                    <th className="text-right px-4 py-2 font-medium text-gray-600 w-28">Prix HT (€)</th>
+                    <th className="text-center px-4 py-2 font-medium text-gray-600 w-16">Page</th>
+                    <th className="w-10" />
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {importResult.articles.map((p, i) => (
+                    <tr key={i} className={selectedArticles.has(i) ? 'bg-blue-50' : 'hover:bg-gray-50'}>
+                      <td className="px-3 py-2"><input type="checkbox" checked={selectedArticles.has(i)} onChange={() => setSelectedArticles(prev => { const n = new Set(prev); n.has(i) ? n.delete(i) : n.add(i); return n })} className="cursor-pointer" /></td>
+                      <td className="px-4 py-2 font-mono text-xs text-gray-500">{p.reference ?? '—'}</td>
+                      <td className="px-4 py-2 text-gray-900">{p.designation}</td>
+                      <td className="px-4 py-2 text-gray-500">{p.unite}</td>
+                      <td className="px-4 py-2 text-right font-mono">{(p.prix_achat ?? 0).toFixed(2)}</td>
+                      <td className="px-4 py-2 text-center font-mono text-xs text-gray-400">{p.page ?? '—'}</td>
+                      <td className="px-2 py-1.5 text-right">
+                        <button onClick={() => setImportResult(prev => prev ? { ...prev, articles: prev.articles.filter((_, j) => j !== i) } : prev)} className="p-1 rounded hover:bg-red-100 text-red-400 hover:text-red-600 transition-colors">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
 
         {compareResult && (
           <div className="mt-6 space-y-4">

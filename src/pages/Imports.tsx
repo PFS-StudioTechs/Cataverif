@@ -38,7 +38,7 @@ export default function Imports() {
   const deleteImport = async (imp: Import) => {
     const msg = `Supprimer cet import ${imp.fournisseurs?.nom ?? ''} ?`
     if (!window.confirm(msg)) return
-    await supabase.storage.from('artisan-documents').remove([imp.fichier_url])
+    await supabase.storage.from('artisan-documents').remove([imp.fichier_url, `extraction/${imp.id}.csv`])
     await supabase.from('catalogue_imports').delete().eq('id', imp.id)
     setImports(prev => prev.filter(i => i.id !== imp.id))
   }
