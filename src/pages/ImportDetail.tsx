@@ -282,20 +282,25 @@ export default function ImportDetail() {
       try { result = await resp.json() } catch { result = { error: `Erreur serveur (${resp.status})` } }
       if (!resp.ok || result.error) throw new Error(typeof result.error === 'string' ? result.error : 'Erreur serveur')
       setExtractTextMsg(`Extraction terminée — ${result.nb_blocs} blocs extraits`)
-      let downloadUrl = result.url as string | undefined
-      if (!downloadUrl) {
-        const { data: signed } = await supabase.storage.from('artisan-documents').createSignedUrl(result.storage_path as string, 60)
-        downloadUrl = signed?.signedUrl
-      }
-      if (downloadUrl) {
-        const blob = await fetch(downloadUrl).then(r => r.blob())
+
+      const downloadCsv = async (urlKey: string, pathKey: string, filename: string) => {
+        let url = result[urlKey] as string | undefined
+        if (!url) {
+          const { data: signed } = await supabase.storage.from('artisan-documents').createSignedUrl(result[pathKey] as string, 60)
+          url = signed?.signedUrl
+        }
+        if (!url) return
+        const blob = await fetch(url).then(r => r.blob())
         const blobUrl = URL.createObjectURL(blob)
         const a = document.createElement('a')
         a.href = blobUrl
-        a.download = 'export texte catalogue.csv'
+        a.download = filename
         a.click()
         URL.revokeObjectURL(blobUrl)
       }
+
+      await downloadCsv('url_text',   'storage_path_text',   'export texte catalogue.csv')
+      await downloadCsv('url_tables', 'storage_path_tables', 'export tableau catalogue.csv')
     } catch (e) {
       setExtractTextMsg(`Erreur : ${e instanceof Error ? e.message : 'Erreur inconnue'}`)
     } finally {

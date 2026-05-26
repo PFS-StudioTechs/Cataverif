@@ -65,14 +65,26 @@ serve(async (req) => {
     let produitsSource: Produit[];
     let extractionMethod: string;
 
-    // Essaie d'abord le CSV extrait
-    const { data: csvData } = await db.storage.from(BUCKET).download(`extraction/${import_id}.csv`);
+    // Priorité 1 : CSV manuel retravaillé uploadé par l'utilisateur
+    const { data: csvManuel } = await db.storage.from(BUCKET).download(`extraction/${import_id}.csv`);
 
-    if (csvData) {
-      const csvText = await csvData.text();
+    // Priorité 2 : 2 CSV auto-générés (texte + tableaux)
+    const [{ data: csvTextData }, { data: csvTablesData }] = await Promise.all([
+      db.storage.from(BUCKET).download(`extraction/${import_id}_text.csv`),
+      db.storage.from(BUCKET).download(`extraction/${import_id}_tables.csv`),
+    ]);
+
+    if (csvManuel) {
+      const csvText = await csvManuel.text();
       const parsed = await parseCSV(csvText, anthropicKey);
       produitsSource = parsed.produits;
-      extractionMethod = parsed.method;
+      extractionMethod = parsed.method + "_manuel";
+    } else if (csvTextData || csvTablesData) {
+      const textContent   = csvTextData   ? await csvTextData.text()   : "";
+      const tablesContent = csvTablesData ? await csvTablesData.text() : "";
+      const result = await extractFromDualCSV(textContent, tablesContent, anthropicKey);
+      produitsSource = result.produits;
+      extractionMethod = result.method;
     } else {
       // Fallback : analyse directe du fichier source (PDF ou image)
       const { data: fileData, error: dlErr } = await db.storage.from(BUCKET).download(imp.fichier_url);
@@ -132,6 +144,107 @@ serve(async (req) => {
     );
   }
 });
+
+// --- Extraction hybride : 2 CSV combinés ---
+
+async function extractFromDualCSV(textContent: string, tablesContent: string, anthropicKey: string): Promise<{ produits: Produit[]; method: string }> {
+  // Si tableaux structurés (avec colonnes ref/designation/prix), parser directement
+  if (tablesContent) {
+    const firstLine = tablesContent.replace(/\r\n/g, "\n").split("\n")[0] ?? "";
+    const headers = firstLine.split(";").map(h => h.trim().toLowerCase().replace(/^﻿/, ""));
+    if (isStructuredCSV(headers)) {
+      return { produits: parseStructuredCSV(tablesContent, headers), method: "tables_structure" };
+    }
+  }
+
+  // Sinon : envoyer les 2 sources à Claude
+  const textLines = textContent ? textContent.replace(/\r\n/g, "\n").split("\n").slice(1).filter(l => l.trim()) : [];
+  const tableLines = tablesContent ? tablesContent.replace(/\r\n/g, "\n").split("\n").slice(1).filter(l => l.trim()) : [];
+
+  // Grouper par pages de 20
+  const pageMap = new Map<number, { textBlocks: string[]; tableRows: string[] }>();
+
+  for (const line of textLines) {
+    const cells = line.split(";");
+    const page = parseInt(cells[0] ?? "0") || 0;
+    const texte = (cells[1] ?? "").trim();
+    if (texte) {
+      if (!pageMap.has(page)) pageMap.set(page, { textBlocks: [], tableRows: [] });
+      pageMap.get(page)!.textBlocks.push(texte);
+    }
+  }
+
+  for (const line of tableLines) {
+    const cells = line.split(";");
+    const page = parseInt(cells[0] ?? "0") || 0;
+    const cellules = (cells[3] ?? "").trim();
+    if (cellules) {
+      if (!pageMap.has(page)) pageMap.set(page, { textBlocks: [], tableRows: [] });
+      pageMap.get(page)!.tableRows.push(cellules);
+    }
+  }
+
+  const pages = [...pageMap.entries()].sort(([a], [b]) => a - b);
+  const all: Produit[] = [];
+
+  for (let i = 0; i < pages.length; i += CHUNK_SIZE) {
+    const chunk = pages.slice(i, i + CHUNK_SIZE);
+    const chunkText = chunk.map(([page, data]) => {
+      const parts = [`=== PAGE ${page} ===`];
+      if (data.tableRows.length > 0) {
+        parts.push("-- LIGNES DE TABLEAU --");
+        parts.push(data.tableRows.join("\n"));
+      }
+      if (data.textBlocks.length > 0) {
+        parts.push("-- BLOCS TEXTE --");
+        parts.push(data.textBlocks.join("\n"));
+      }
+      return parts.join("\n");
+    }).join("\n\n---\n\n");
+
+    all.push(...await callClaudeHybrid(chunkText, anthropicKey));
+  }
+
+  return { produits: deduplicateSmart(all), method: "hybrid_dual_csv" };
+}
+
+async function callClaudeHybrid(text: string, anthropicKey: string): Promise<Produit[]> {
+  const prompt = `Tu analyses un extrait de catalogue fournisseur. Tu disposes de DEUX sources extraites par Python :
+- "LIGNES DE TABLEAU" : cellules de tableau séparées par |, dans l'ordre des colonnes du PDF
+- "BLOCS TEXTE" : blocs de texte brut de la même page (descriptions, noms de gamme, headers)
+
+Utilise les LIGNES DE TABLEAU comme source principale pour les données produits (référence, prix).
+Utilise les BLOCS TEXTE pour compléter la désignation ou identifier le nom de gamme si absent du tableau.
+
+Extrais TOUS les produits ayant un prix. Pour chaque produit :
+- r : référence article (cherche un code alphanumérique court dans les cellules, null si absent)
+- d : désignation complète (combine nom de gamme + description du tableau)
+- u : unité de vente ("u" par défaut)
+- pa : prix HT en euros (nombre décimal)
+- pg : numéro de page (section === PAGE N ===)
+
+Réponds UNIQUEMENT en JSON compact sur une seule ligne :
+{"p":[{"r":"ref_ou_null","d":"designation","u":"unite","pa":0.00,"pg":1}]}
+
+Règles :
+- Si une ligne tableau contient plusieurs prix dans des colonnes distinctes = plusieurs produits (variantes)
+- Ignorer les lignes sans prix ou avec prix = 0
+- Ignorer les lignes qui sont des en-têtes de colonnes (pas de valeur numérique comme prix)
+- r=null si absent, u="u" si absente
+
+DONNÉES DU CATALOGUE :
+${text}`;
+
+  const resp = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "x-api-key": anthropicKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+    body: JSON.stringify({ model: "claude-haiku-4-5-20251001", max_tokens: 8192, messages: [{ role: "user", content: prompt }] }),
+  });
+
+  if (!resp.ok) throw new Error(`Claude API: ${await resp.text()}`);
+  const data = await resp.json();
+  return parseAI((data.content?.[0]?.text ?? "").trim());
+}
 
 // --- CSV extrait (texte brut ou structuré) ---
 

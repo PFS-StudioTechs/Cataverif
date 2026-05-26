@@ -43,20 +43,31 @@ class handler(BaseHTTPRequestHandler):
 
             file_bytes = db.storage.from_(BUCKET).download(fichier_url)
 
-            csv_bytes = extract_to_csv(file_bytes)
+            csv_text   = extract_text_blocks(file_bytes)
+            csv_tables = extract_tables(file_bytes)
 
-            storage_path = f"{EXTRACTION_PATH}/{import_id}.csv"
-            db.storage.from_(BUCKET).upload(
-                storage_path,
-                csv_bytes,
-                {"content-type": "text/csv; charset=utf-8", "upsert": "true"},
-            )
+            path_text   = f"{EXTRACTION_PATH}/{import_id}_text.csv"
+            path_tables = f"{EXTRACTION_PATH}/{import_id}_tables.csv"
 
-            signed = db.storage.from_(BUCKET).create_signed_url(storage_path, 300)
-            url = signed.get("signedURL") or signed.get("signedUrl") or ""
+            opts = {"content-type": "text/csv; charset=utf-8", "upsert": "true"}
+            db.storage.from_(BUCKET).upload(path_text,   csv_text,   opts)
+            db.storage.from_(BUCKET).upload(path_tables, csv_tables, opts)
 
-            nb_blocs = csv_bytes.decode("utf-8-sig").count("\n") - 1
-            self._json({"url": url, "storage_path": storage_path, "nb_blocs": nb_blocs})
+            signed_text   = db.storage.from_(BUCKET).create_signed_url(path_text,   300)
+            signed_tables = db.storage.from_(BUCKET).create_signed_url(path_tables, 300)
+
+            url_text   = signed_text.get("signedURL")   or signed_text.get("signedUrl")   or ""
+            url_tables = signed_tables.get("signedURL") or signed_tables.get("signedUrl") or ""
+
+            nb_blocs = csv_text.decode("utf-8-sig").count("\n") - 1
+
+            self._json({
+                "url_text":          url_text,
+                "url_tables":        url_tables,
+                "storage_path_text": path_text,
+                "storage_path_tables": path_tables,
+                "nb_blocs": nb_blocs,
+            })
 
         except Exception as e:
             self._json({"error": str(e)}, 500)
@@ -76,7 +87,7 @@ class handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
 
-def extract_to_csv(file_bytes: bytes) -> bytes:
+def extract_text_blocks(file_bytes: bytes) -> bytes:
     doc = fitz.open(stream=file_bytes, filetype="pdf")
     output = io.StringIO()
     writer = csv.writer(output, delimiter=";", quoting=csv.QUOTE_MINIMAL)
@@ -84,11 +95,7 @@ def extract_to_csv(file_bytes: bytes) -> bytes:
 
     for page_num, page in enumerate(doc, start=1):
         blocks = page.get_text("blocks")
-        text_blocks = [
-            b[4].strip()
-            for b in blocks
-            if b[6] == 0 and b[4].strip()
-        ]
+        text_blocks = [b[4].strip() for b in blocks if b[6] == 0 and b[4].strip()]
         if not text_blocks:
             words = page.get_text("words")
             if words:
@@ -109,6 +116,28 @@ def extract_to_csv(file_bytes: bytes) -> bytes:
 
         for bloc in text_blocks:
             writer.writerow([page_num, bloc])
+
+    doc.close()
+    return ("﻿" + output.getvalue()).encode("utf-8")
+
+
+def extract_tables(file_bytes: bytes) -> bytes:
+    doc = fitz.open(stream=file_bytes, filetype="pdf")
+    output = io.StringIO()
+    writer = csv.writer(output, delimiter=";", quoting=csv.QUOTE_MINIMAL)
+    writer.writerow(["page", "tableau", "ligne", "cellules"])
+
+    for page_num, page in enumerate(doc, start=1):
+        try:
+            tables = page.find_tables()
+            for t_idx, table in enumerate(tables):
+                rows = table.extract()
+                for r_idx, row in enumerate(rows):
+                    cells = [str(c or "").strip() for c in row]
+                    if any(c for c in cells):
+                        writer.writerow([page_num, t_idx, r_idx, " | ".join(cells)])
+        except Exception:
+            pass
 
     doc.close()
     return ("﻿" + output.getvalue()).encode("utf-8")
