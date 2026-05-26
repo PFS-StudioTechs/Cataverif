@@ -293,10 +293,13 @@ export default function ImportDetail() {
         downloadUrl = signed?.signedUrl
       }
       if (downloadUrl) {
+        const blob = await fetch(downloadUrl).then(r => r.blob())
+        const blobUrl = URL.createObjectURL(blob)
         const a = document.createElement('a')
-        a.href = downloadUrl
+        a.href = blobUrl
         a.download = 'export texte catalogue.csv'
         a.click()
+        URL.revokeObjectURL(blobUrl)
       }
     } catch (e) {
       setExtractTextMsg(`Erreur : ${e instanceof Error ? e.message : 'Erreur inconnue'}`)
