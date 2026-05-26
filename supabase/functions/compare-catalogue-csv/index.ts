@@ -157,6 +157,41 @@ serve(async (req) => {
 
 // --- Extraction hybride : 2 CSV combinés ---
 
+const REF_PATTERN = /^[A-Z][A-Z0-9]{4,14}$/;
+const PRICE_PATTERN = /^\d{1,5}[,\.]\d{2}$/;
+
+function tryParseProductBlock(page: number, texte: string): Produit | null {
+  // Handles both escaped \n (new Python format) and raw text
+  const lines = texte.replace(/\\n/g, "\n").split("\n").map(l => l.trim()).filter(l => l);
+  if (lines.length < 4) return null;
+
+  // Last line must be a reference code (e.g. OSR799646)
+  const lastLine = lines[lines.length - 1];
+  if (!REF_PATTERN.test(lastLine)) return null;
+
+  // Last decimal-format number = price HT
+  let prix_achat = 0;
+  for (let i = lines.length - 2; i >= 0; i--) {
+    if (PRICE_PATTERN.test(lines[i])) {
+      prix_achat = parseFloat(lines[i].replace(",", "."));
+      break;
+    }
+  }
+  if (prix_achat === 0) return null;
+
+  // Designation: first line that is not a bare integer or simple fraction
+  let designation = "";
+  for (const line of lines) {
+    if (!/^\d+$/.test(line) && !/^\d+[\/\-]\d+/.test(line) && line.length > 2) {
+      designation = line;
+      break;
+    }
+  }
+  if (!designation) return null;
+
+  return { reference: lastLine, designation, unite: "u", prix_achat, page };
+}
+
 async function extractFromDualCSV(textContent: string, tablesContent: string, anthropicKey: string, userContext = "", userExamples: Produit[] = [], maxPage = Infinity): Promise<{ produits: Produit[]; method: string }> {
   // Si tableaux structurés (avec colonnes ref/designation/prix), parser directement
   if (tablesContent) {
@@ -167,24 +202,31 @@ async function extractFromDualCSV(textContent: string, tablesContent: string, an
     }
   }
 
-  // Sinon : envoyer les 2 sources à Claude
-  const textLines = textContent ? textContent.replace(/\r\n/g, "\n").split("\n").slice(1).filter(l => l.trim()) : [];
-  const tableLines = tablesContent ? tablesContent.replace(/\r\n/g, "\n").split("\n").slice(1).filter(l => l.trim()) : [];
-
-  // Grouper par pages de 20
+  const deterministicProduits: Produit[] = [];
   const pageMap = new Map<number, { textBlocks: string[]; tableRows: string[] }>();
 
+  // Parse text CSV — each row is now a single line (newlines escaped as \\n by Python)
+  const textLines = textContent ? textContent.replace(/\r\n/g, "\n").split("\n").slice(1).filter(l => l.trim()) : [];
   for (const line of textLines) {
-    const cells = line.split(";");
-    const page = parseInt(cells[0] ?? "0") || 0;
-    if (page > maxPage) continue;
-    const texte = (cells[1] ?? "").trim();
-    if (texte) {
+    const sepIdx = line.indexOf(";");
+    if (sepIdx === -1) continue;
+    const page = parseInt(line.slice(0, sepIdx)) || 0;
+    if (page === 0 || page > maxPage) continue;
+    // Strip surrounding CSV quotes if present
+    const texte = line.slice(sepIdx + 1).replace(/^"/, "").replace(/"$/, "").trim();
+    if (!texte) continue;
+
+    const parsed = tryParseProductBlock(page, texte);
+    if (parsed) {
+      deterministicProduits.push(parsed);
+    } else {
       if (!pageMap.has(page)) pageMap.set(page, { textBlocks: [], tableRows: [] });
-      pageMap.get(page)!.textBlocks.push(texte);
+      pageMap.get(page)!.textBlocks.push(texte.replace(/\\n/g, "\n"));
     }
   }
 
+  // Parse tables CSV
+  const tableLines = tablesContent ? tablesContent.replace(/\r\n/g, "\n").split("\n").slice(1).filter(l => l.trim()) : [];
   for (const line of tableLines) {
     const cells = line.split(";");
     const page = parseInt(cells[0] ?? "0") || 0;
@@ -196,8 +238,9 @@ async function extractFromDualCSV(textContent: string, tablesContent: string, an
     }
   }
 
+  // Send remaining non-deterministic data to Claude
   const pages = [...pageMap.entries()].sort(([a], [b]) => a - b);
-  const all: Produit[] = [];
+  const claudeProduits: Produit[] = [];
 
   for (let i = 0; i < pages.length; i += CHUNK_SIZE) {
     const chunk = pages.slice(i, i + CHUNK_SIZE);
@@ -214,10 +257,14 @@ async function extractFromDualCSV(textContent: string, tablesContent: string, an
       return parts.join("\n");
     }).join("\n\n---\n\n");
 
-    all.push(...await callClaudeHybrid(chunkText, anthropicKey, userContext, userExamples));
+    claudeProduits.push(...await callClaudeHybrid(chunkText, anthropicKey, userContext, userExamples));
   }
 
-  return { produits: deduplicateSmart(all), method: "hybrid_dual_csv" };
+  const allProduits = [...deterministicProduits, ...claudeProduits];
+  return {
+    produits: deduplicateSmart(allProduits),
+    method: deterministicProduits.length > 0 ? "hybrid_deterministic" : "hybrid_dual_csv",
+  };
 }
 
 function buildContextSection(userContext: string, userExamples: Produit[]): string {

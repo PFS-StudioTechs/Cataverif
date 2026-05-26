@@ -116,7 +116,7 @@ def extract_text_blocks(file_bytes: bytes) -> bytes:
                     text_blocks = ["\n".join(lines)]
 
         for bloc in text_blocks:
-            writer.writerow([page_num, bloc])
+            writer.writerow([page_num, bloc.replace("\n", "\\n")])
 
     doc.close()
     return ("﻿" + output.getvalue()).encode("utf-8")
