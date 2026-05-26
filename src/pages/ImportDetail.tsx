@@ -328,7 +328,10 @@ export default function ImportDetail() {
     setUploadingRetouched(true)
     setUploadRetouchedMsg(null)
     try {
-      const path = `extraction/${id}.csv`
+      const name = file.name.toLowerCase()
+      const path = name.includes('texte')
+        ? `extraction/${id}_text.csv`
+        : `extraction/${id}_tables.csv`
       const { error } = await supabase.storage.from('artisan-documents').upload(path, file, {
         contentType: 'text/csv',
         upsert: true,
