@@ -3,6 +3,7 @@ import io
 import csv
 import json
 import fitz
+import pdfplumber
 from supabase import create_client
 from http.server import BaseHTTPRequestHandler
 
@@ -122,25 +123,20 @@ def extract_text_blocks(file_bytes: bytes) -> bytes:
 
 
 def extract_tables(file_bytes: bytes) -> bytes:
-    doc = fitz.open(stream=file_bytes, filetype="pdf")
     output = io.StringIO()
     writer = csv.writer(output, delimiter=";", quoting=csv.QUOTE_MINIMAL)
     writer.writerow(["page", "tableau", "ligne", "cellules"])
 
-    for page_num, page in enumerate(doc, start=1):
-        try:
+    with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+        for page_num, page in enumerate(pdf.pages, start=1):
             try:
-                tables = page.find_tables(strategy="lines")
+                tables = page.extract_tables()
+                for t_idx, table in enumerate(tables):
+                    for r_idx, row in enumerate(table):
+                        cells = [str(c or "").strip() for c in row]
+                        if any(c for c in cells):
+                            writer.writerow([page_num, t_idx, r_idx, " | ".join(cells)])
             except Exception:
-                tables = page.find_tables()
-            for t_idx, table in enumerate(tables):
-                rows = table.extract()
-                for r_idx, row in enumerate(rows):
-                    cells = [str(c or "").strip() for c in row]
-                    if any(c for c in cells):
-                        writer.writerow([page_num, t_idx, r_idx, " | ".join(cells)])
-        except Exception:
-            pass
+                pass
 
-    doc.close()
     return ("﻿" + output.getvalue()).encode("utf-8")
