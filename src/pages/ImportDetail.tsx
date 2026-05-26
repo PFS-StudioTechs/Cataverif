@@ -16,6 +16,14 @@ type Produit = {
   page_catalogue?: number | null
 }
 
+type ArticleSource = {
+  reference: string | null
+  designation: string
+  unite: string
+  prix_achat: number
+  page?: number | null
+}
+
 type EcartPrix = {
   reference: string | null
   designation: string
@@ -97,6 +105,13 @@ export default function ImportDetail() {
   const [uploadRetouchedMsg, setUploadRetouchedMsg] = useState<string | null>(null)
   const [importResult, setImportResult] = useState<ImportModeResult | null>(null)
   const [selectedArticles, setSelectedArticles] = useState<Set<number>>(new Set())
+
+  const [showPrepModal, setShowPrepModal] = useState(false)
+  const [prepContext, setPrepContext] = useState('')
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const [previewProduits, setPreviewProduits] = useState<ArticleSource[] | null>(null)
+  const [editPreviewIdx, setEditPreviewIdx] = useState<number | null>(null)
+  const [editPreviewData, setEditPreviewData] = useState<Partial<ArticleSource>>({})
 
   const toggleManquant = (i: number) => setSelectedManquants(prev => {
     const n = new Set(prev); n.has(i) ? n.delete(i) : n.add(i); return n
@@ -327,8 +342,30 @@ export default function ImportDetail() {
     }
   }
 
-  const runCompare = async () => {
+  const runPreview = async () => {
     if (!imp) return
+    setPreviewLoading(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/compare-catalogue-csv`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ import_id: id, mode: 'preview', preview_pages: 5, context: prepContext }),
+      })
+      const result = await resp.json()
+      if (result.error) throw new Error(typeof result.error === 'string' ? result.error : 'Erreur serveur')
+      setPreviewProduits(result.articles ?? [])
+    } catch (e) {
+      setCompareError(e instanceof Error ? e.message : 'Erreur inconnue')
+      setShowPrepModal(false)
+    } finally {
+      setPreviewLoading(false)
+    }
+  }
+
+  const runCompare = async (context = '', examples: ArticleSource[] = []) => {
+    if (!imp) return
+    setShowPrepModal(false)
     setComparing(true)
     setCompareError(null)
     setCompareResult(null)
@@ -340,7 +377,7 @@ export default function ImportDetail() {
       const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/compare-catalogue-csv`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
-        body: JSON.stringify({ import_id: id }),
+        body: JSON.stringify({ import_id: id, context, examples }),
       })
       let result: Record<string, unknown>
       try { result = await resp.json() } catch { result = { error: `Erreur serveur (${resp.status})` } }
@@ -514,7 +551,7 @@ export default function ImportDetail() {
             <input type="file" accept=".csv,text/csv" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) uploadRetouched(f); e.target.value = '' }} />
           </label>
           <button
-            onClick={runCompare}
+            onClick={() => { setPreviewProduits(null); setShowPrepModal(true) }}
             disabled={comparing}
             className="flex items-center gap-1.5 text-sm border border-blue-300 text-blue-700 rounded-lg px-4 py-2 hover:bg-blue-50 transition-colors disabled:opacity-40"
           >
@@ -1044,6 +1081,109 @@ export default function ImportDetail() {
         )}
         </div>
       </main>
+
+      {showPrepModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl mx-4 flex flex-col max-h-[80vh]">
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+              <h2 className="font-semibold text-gray-900">Paramétrer l'extraction</h2>
+              <button onClick={() => { setShowPrepModal(false); setPreviewProduits(null) }} className="text-gray-400 hover:text-gray-700 transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {!previewProduits ? (
+              <div className="p-6 space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Contexte (optionnel)</label>
+                  <textarea
+                    value={prepContext}
+                    onChange={e => setPrepContext(e.target.value)}
+                    placeholder="Ex : Catalogue de parquet. Prix en €/m². Références au format XXXX-XXX. Ignorer les pages en espagnol."
+                    className="w-full h-28 border border-gray-300 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-300"
+                  />
+                </div>
+                <div className="flex gap-3">
+                  <button
+                    onClick={runPreview}
+                    disabled={previewLoading}
+                    className="flex-1 flex items-center justify-center gap-2 border border-indigo-300 text-indigo-700 rounded-lg px-4 py-2 text-sm hover:bg-indigo-50 transition-colors disabled:opacity-40"
+                  >
+                    {previewLoading ? 'Extraction en cours…' : 'Aperçu 5 premières pages'}
+                  </button>
+                  <button
+                    onClick={() => runCompare(prepContext)}
+                    className="flex-1 flex items-center justify-center gap-2 bg-blue-600 text-white rounded-lg px-4 py-2 text-sm hover:bg-blue-700 transition-colors"
+                  >
+                    Comparer directement
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col min-h-0">
+                <div className="px-6 py-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+                  <span className="text-sm text-gray-600">{previewProduits.length} articles extraits (5 premières pages)</span>
+                  <span className="text-xs text-gray-400">Corrigez si besoin, puis lancez la comparaison</span>
+                </div>
+                <div className="overflow-y-auto flex-1">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 border-b border-gray-200 sticky top-0">
+                      <tr>
+                        <th className="text-left px-4 py-2 font-medium text-gray-600 w-24">Réf.</th>
+                        <th className="text-left px-4 py-2 font-medium text-gray-600">Désignation</th>
+                        <th className="text-left px-4 py-2 font-medium text-gray-600 w-16">Unité</th>
+                        <th className="text-right px-4 py-2 font-medium text-gray-600 w-24">Prix HT</th>
+                        <th className="w-16"></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {previewProduits.map((p, i) => (
+                        <tr key={i} className="hover:bg-gray-50">
+                          {editPreviewIdx === i ? (
+                            <>
+                              <td className="px-2 py-1"><input className="w-full border rounded px-2 py-0.5 text-xs font-mono" value={editPreviewData.reference ?? ''} onChange={e => setEditPreviewData(d => ({ ...d, reference: e.target.value || null }))} /></td>
+                              <td className="px-2 py-1"><input className="w-full border rounded px-2 py-0.5 text-xs" value={editPreviewData.designation ?? ''} onChange={e => setEditPreviewData(d => ({ ...d, designation: e.target.value }))} /></td>
+                              <td className="px-2 py-1"><input className="w-full border rounded px-2 py-0.5 text-xs" value={editPreviewData.unite ?? ''} onChange={e => setEditPreviewData(d => ({ ...d, unite: e.target.value }))} /></td>
+                              <td className="px-2 py-1"><input type="number" step="0.01" className="w-full border rounded px-2 py-0.5 text-xs text-right" value={editPreviewData.prix_achat ?? 0} onChange={e => setEditPreviewData(d => ({ ...d, prix_achat: parseFloat(e.target.value) || 0 }))} /></td>
+                              <td className="px-2 py-1">
+                                <div className="flex gap-1 justify-end">
+                                  <button onClick={() => { setPreviewProduits(prev => prev ? prev.map((x, j) => j === i ? { ...x, ...editPreviewData } as ArticleSource : x) : prev); setEditPreviewIdx(null) }} className="text-green-600 hover:text-green-800"><Check className="w-3.5 h-3.5" /></button>
+                                  <button onClick={() => setEditPreviewIdx(null)} className="text-gray-400 hover:text-gray-600"><X className="w-3.5 h-3.5" /></button>
+                                </div>
+                              </td>
+                            </>
+                          ) : (
+                            <>
+                              <td className="px-4 py-2 font-mono text-xs text-gray-500">{p.reference ?? '—'}</td>
+                              <td className="px-4 py-2 text-gray-900">{p.designation}</td>
+                              <td className="px-4 py-2 text-gray-500">{p.unite}</td>
+                              <td className="px-4 py-2 text-right font-mono">{(p.prix_achat ?? 0).toFixed(2)}</td>
+                              <td className="px-2 py-1.5">
+                                <div className="flex gap-1 justify-end">
+                                  <button onClick={() => { setEditPreviewIdx(i); setEditPreviewData({ reference: p.reference, designation: p.designation, unite: p.unite, prix_achat: p.prix_achat }) }} className="text-gray-300 hover:text-blue-500 transition-colors"><Pencil className="w-3.5 h-3.5" /></button>
+                                  <button onClick={() => setPreviewProduits(prev => prev ? prev.filter((_, j) => j !== i) : prev)} className="text-gray-300 hover:text-red-500 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
+                                </div>
+                              </td>
+                            </>
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="px-6 py-4 border-t border-gray-200">
+                  <button
+                    onClick={() => runCompare(prepContext, previewProduits)}
+                    className="w-full flex items-center justify-center gap-2 bg-blue-600 text-white rounded-lg px-4 py-2 text-sm hover:bg-blue-700 transition-colors"
+                  >
+                    <GitCompare className="w-4 h-4" /> Lancer la comparaison
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -47,7 +47,8 @@ serve(async (req) => {
     }
 
     const db = createClient(supabaseUrl, serviceKey);
-    const { import_id } = await req.json();
+    const body = await req.json();
+    const { import_id, mode = "compare", preview_pages = 5, context: userContext = "", examples: userExamples = [] } = body;
     if (!import_id) {
       return new Response(JSON.stringify({ error: "import_id requis" }), { status: 400, headers: cors });
     }
@@ -64,6 +65,7 @@ serve(async (req) => {
 
     let produitsSource: Produit[];
     let extractionMethod: string;
+    const maxPage = mode === "preview" ? preview_pages : Infinity;
 
     // Priorité 1 : CSV manuel retravaillé uploadé par l'utilisateur
     const { data: csvManuel } = await db.storage.from(BUCKET).download(`extraction/${import_id}.csv`);
@@ -76,13 +78,13 @@ serve(async (req) => {
 
     if (csvManuel) {
       const csvText = await csvManuel.text();
-      const parsed = await parseCSV(csvText, anthropicKey);
+      const parsed = await parseCSV(csvText, anthropicKey, userContext, userExamples, maxPage);
       produitsSource = parsed.produits;
       extractionMethod = parsed.method + "_manuel";
     } else if (csvTextData || csvTablesData) {
       const textContent   = csvTextData   ? await csvTextData.text()   : "";
       const tablesContent = csvTablesData ? await csvTablesData.text() : "";
-      const result = await extractFromDualCSV(textContent, tablesContent, anthropicKey);
+      const result = await extractFromDualCSV(textContent, tablesContent, anthropicKey, userContext, userExamples, maxPage);
       produitsSource = result.produits;
       extractionMethod = result.method;
     } else {
@@ -101,6 +103,14 @@ serve(async (req) => {
         produitsSource = await callClaudeVision(buffer, anthropicKey);
         extractionMethod = "image_sonnet";
       }
+    }
+
+    // Mode preview : retourner directement les produits extraits
+    if (mode === "preview") {
+      return new Response(
+        JSON.stringify({ mode: "preview", extraction_method: extractionMethod, articles: produitsSource }),
+        { headers: { ...cors, "Content-Type": "application/json" } }
+      );
     }
 
     if (imp.statut === "termine") {
@@ -147,7 +157,7 @@ serve(async (req) => {
 
 // --- Extraction hybride : 2 CSV combinés ---
 
-async function extractFromDualCSV(textContent: string, tablesContent: string, anthropicKey: string): Promise<{ produits: Produit[]; method: string }> {
+async function extractFromDualCSV(textContent: string, tablesContent: string, anthropicKey: string, userContext = "", userExamples: Produit[] = [], maxPage = Infinity): Promise<{ produits: Produit[]; method: string }> {
   // Si tableaux structurés (avec colonnes ref/designation/prix), parser directement
   if (tablesContent) {
     const firstLine = tablesContent.replace(/\r\n/g, "\n").split("\n")[0] ?? "";
@@ -167,6 +177,7 @@ async function extractFromDualCSV(textContent: string, tablesContent: string, an
   for (const line of textLines) {
     const cells = line.split(";");
     const page = parseInt(cells[0] ?? "0") || 0;
+    if (page > maxPage) continue;
     const texte = (cells[1] ?? "").trim();
     if (texte) {
       if (!pageMap.has(page)) pageMap.set(page, { textBlocks: [], tableRows: [] });
@@ -177,6 +188,7 @@ async function extractFromDualCSV(textContent: string, tablesContent: string, an
   for (const line of tableLines) {
     const cells = line.split(";");
     const page = parseInt(cells[0] ?? "0") || 0;
+    if (page > maxPage) continue;
     const cellules = (cells[3] ?? "").trim();
     if (cellules) {
       if (!pageMap.has(page)) pageMap.set(page, { textBlocks: [], tableRows: [] });
@@ -202,13 +214,25 @@ async function extractFromDualCSV(textContent: string, tablesContent: string, an
       return parts.join("\n");
     }).join("\n\n---\n\n");
 
-    all.push(...await callClaudeHybrid(chunkText, anthropicKey));
+    all.push(...await callClaudeHybrid(chunkText, anthropicKey, userContext, userExamples));
   }
 
   return { produits: deduplicateSmart(all), method: "hybrid_dual_csv" };
 }
 
-async function callClaudeHybrid(text: string, anthropicKey: string): Promise<Produit[]> {
+function buildContextSection(userContext: string, userExamples: Produit[]): string {
+  const parts: string[] = []
+  if (userContext.trim()) parts.push(`CONTEXTE UTILISATEUR :\n${userContext.trim()}`)
+  if (userExamples.length > 0) {
+    const ex = userExamples.slice(0, 15).map(p =>
+      `{"r":${JSON.stringify(p.reference)},"d":${JSON.stringify(p.designation)},"u":${JSON.stringify(p.unite)},"pa":${p.prix_achat}}`
+    ).join(",")
+    parts.push(`EXEMPLES DE PRODUITS ATTENDUS :\n{"p":[${ex}]}`)
+  }
+  return parts.length > 0 ? "\n" + parts.join("\n\n") + "\n" : ""
+}
+
+async function callClaudeHybrid(text: string, anthropicKey: string, userContext = "", userExamples: Produit[] = []): Promise<Produit[]> {
   const prompt = `Tu analyses un extrait de catalogue fournisseur. Tu disposes de DEUX sources extraites par Python :
 - "LIGNES DE TABLEAU" : cellules de tableau séparées par |, dans l'ordre des colonnes du PDF
 - "BLOCS TEXTE" : blocs de texte brut de la même page (descriptions, noms de gamme, headers)
@@ -231,7 +255,7 @@ Règles :
 - Ignorer les lignes sans prix ou avec prix = 0
 - Ignorer les lignes qui sont des en-têtes de colonnes (pas de valeur numérique comme prix)
 - r=null si absent, u="u" si absente
-
+${buildContextSection(userContext, userExamples)}
 DONNÉES DU CATALOGUE :
 ${text}`;
 
@@ -248,7 +272,7 @@ ${text}`;
 
 // --- CSV extrait (texte brut ou structuré) ---
 
-async function parseCSV(csvText: string, anthropicKey: string): Promise<{ produits: Produit[]; method: string }> {
+async function parseCSV(csvText: string, anthropicKey: string, userContext = "", userExamples: Produit[] = [], maxPage = Infinity): Promise<{ produits: Produit[]; method: string }> {
   const normalized = csvText.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   const firstLine = normalized.split("\n")[0] ?? "";
   const headers = firstLine.split(";").map(h => h.trim().toLowerCase().replace(/^﻿/, ""));
@@ -256,7 +280,7 @@ async function parseCSV(csvText: string, anthropicKey: string): Promise<{ produi
   if (isStructuredCSV(headers)) {
     return { produits: parseStructuredCSV(normalized, headers), method: "csv_structure" };
   }
-  const produits = await extractFromTextCSV(normalized, anthropicKey);
+  const produits = await extractFromTextCSV(normalized, anthropicKey, userContext, userExamples, maxPage);
   return { produits, method: "csv_texte_claude" };
 }
 
@@ -298,13 +322,14 @@ function parseStructuredCSV(csvText: string, headers: string[]): Produit[] {
   });
 }
 
-async function extractFromTextCSV(csvText: string, anthropicKey: string): Promise<Produit[]> {
+async function extractFromTextCSV(csvText: string, anthropicKey: string, userContext = "", userExamples: Produit[] = [], maxPage = Infinity): Promise<Produit[]> {
   const lines = csvText.split("\n").slice(1);
   const pages = new Map<number, string[]>();
 
   for (const line of lines) {
     const cells = line.split(";");
     const page = parseInt(cells[0] ?? "0") || 0;
+    if (page > maxPage) continue;
     const texte = (cells[1] ?? "").trim();
     if (texte) {
       if (!pages.has(page)) pages.set(page, []);
@@ -321,13 +346,13 @@ async function extractFromTextCSV(csvText: string, anthropicKey: string): Promis
   for (let i = 0; i < pagesText.length; i += CHUNK_SIZE) {
     const chunk = pagesText.slice(i, i + CHUNK_SIZE);
     const chunkText = chunk.map(({ page, text }) => `=== PAGE ${page} ===\n${text}`).join("\n\n---\n\n");
-    all.push(...await callClaudeText(chunkText, anthropicKey));
+    all.push(...await callClaudeText(chunkText, anthropicKey, userContext, userExamples));
   }
 
   return deduplicateSmart(all);
 }
 
-async function callClaudeText(text: string, anthropicKey: string): Promise<Produit[]> {
+async function callClaudeText(text: string, anthropicKey: string, userContext = "", userExamples: Produit[] = []): Promise<Produit[]> {
   const prompt = `Extrais TOUS les produits de ce texte de catalogue fournisseur sans en omettre aucun.
 Pour chaque produit : référence article, désignation complète, unité de vente, prix HT en euros, numéro de page.
 Réponds UNIQUEMENT en JSON compact sur une seule ligne, sans aucun texte avant ou après :
@@ -340,7 +365,7 @@ Règles :
 - DÉCLINAISONS DE TAILLE/DIMENSION : extraire UN article par dimension.
 - Extraire TOUTES les lignes ayant un prix, y compris forfaits, suppléments, accessoires.
 - LANGUE : ignorer les blocs purement en espagnol ou italien.
-
+${buildContextSection(userContext, userExamples)}
 TEXTE DU CATALOGUE :
 ${text}`;
 
