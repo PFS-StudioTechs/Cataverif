@@ -295,7 +295,7 @@ export default function ImportDetail() {
       if (downloadUrl) {
         const a = document.createElement('a')
         a.href = downloadUrl
-        a.download = `extraction-${imp.fournisseurs?.nom ?? id}.csv`
+        a.download = (result.storage_path as string).split('/').pop() ?? `${id}.csv`
         a.click()
       }
     } catch (e) {
