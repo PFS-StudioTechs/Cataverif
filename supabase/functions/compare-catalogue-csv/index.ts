@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { PDFDocument } from "https://esm.sh/pdf-lib@1.17.1";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -8,6 +9,7 @@ const cors = {
 
 const BUCKET = "artisan-documents";
 const CHUNK_SIZE = 20;
+const MAX_PDF_PAGES = 90;
 
 type Produit = {
   reference: string | null;
@@ -52,7 +54,7 @@ serve(async (req) => {
 
     const { data: imp, error: impErr } = await db
       .from("catalogue_imports")
-      .select("statut, artisan_id, fournisseur_id")
+      .select("statut, artisan_id, fournisseur_id, fichier_url, fichier_type")
       .eq("id", import_id)
       .single();
 
@@ -60,17 +62,34 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: "Import introuvable" }), { status: 404, headers: cors });
     }
 
-    const storagePath = `extraction/${import_id}.csv`;
-    const { data: csvData, error: dlErr } = await db.storage.from(BUCKET).download(storagePath);
-    if (dlErr || !csvData) {
-      return new Response(
-        JSON.stringify({ error: "Fichier d'extraction introuvable. Lancez d'abord l'extraction texte." }),
-        { status: 400, headers: cors }
-      );
-    }
+    let produitsSource: Produit[];
+    let extractionMethod: string;
 
-    const csvText = await csvData.text();
-    const { produits: produitsSource, method: extractionMethod } = await parseCSV(csvText, anthropicKey);
+    // Essaie d'abord le CSV extrait
+    const { data: csvData } = await db.storage.from(BUCKET).download(`extraction/${import_id}.csv`);
+
+    if (csvData) {
+      const csvText = await csvData.text();
+      const parsed = await parseCSV(csvText, anthropicKey);
+      produitsSource = parsed.produits;
+      extractionMethod = parsed.method;
+    } else {
+      // Fallback : analyse directe du fichier source (PDF ou image)
+      const { data: fileData, error: dlErr } = await db.storage.from(BUCKET).download(imp.fichier_url);
+      if (dlErr || !fileData) throw new Error(`Téléchargement fichier source: ${dlErr?.message}`);
+      const buffer = await fileData.arrayBuffer();
+
+      if (imp.fichier_type === "csv") {
+        produitsSource = parseCSVDirect(await new Blob([buffer]).text());
+        extractionMethod = "csv_direct";
+      } else if (imp.fichier_type === "pdf") {
+        produitsSource = await extractWithClaudePDF(buffer, anthropicKey);
+        extractionMethod = "pdf_sonnet";
+      } else {
+        produitsSource = await callClaudeVision(buffer, anthropicKey);
+        extractionMethod = "image_sonnet";
+      }
+    }
 
     if (imp.statut === "termine") {
       const { data: produitsDB } = await db
@@ -114,6 +133,8 @@ serve(async (req) => {
   }
 });
 
+// --- CSV extrait (texte brut ou structuré) ---
+
 async function parseCSV(csvText: string, anthropicKey: string): Promise<{ produits: Produit[]; method: string }> {
   const normalized = csvText.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   const firstLine = normalized.split("\n")[0] ?? "";
@@ -127,8 +148,8 @@ async function parseCSV(csvText: string, anthropicKey: string): Promise<{ produi
 }
 
 function isStructuredCSV(headers: string[]): boolean {
-  const required = new Set(["designation", "prix_achat"]);
-  return [...required].every(r => headers.some(h => h.includes(r)));
+  const required = ["designation", "prix_achat"];
+  return required.every(r => headers.some(h => h.includes(r)));
 }
 
 function parseStructuredCSV(csvText: string, headers: string[]): Produit[] {
@@ -187,13 +208,13 @@ async function extractFromTextCSV(csvText: string, anthropicKey: string): Promis
   for (let i = 0; i < pagesText.length; i += CHUNK_SIZE) {
     const chunk = pagesText.slice(i, i + CHUNK_SIZE);
     const chunkText = chunk.map(({ page, text }) => `=== PAGE ${page} ===\n${text}`).join("\n\n---\n\n");
-    all.push(...await callClaude(chunkText, anthropicKey));
+    all.push(...await callClaudeText(chunkText, anthropicKey));
   }
 
   return deduplicateSmart(all);
 }
 
-async function callClaude(text: string, anthropicKey: string): Promise<Produit[]> {
+async function callClaudeText(text: string, anthropicKey: string): Promise<Produit[]> {
   const prompt = `Extrais TOUS les produits de ce texte de catalogue fournisseur sans en omettre aucun.
 Pour chaque produit : référence article, désignation complète, unité de vente, prix HT en euros, numéro de page.
 Réponds UNIQUEMENT en JSON compact sur une seule ligne, sans aucun texte avant ou après :
@@ -201,14 +222,54 @@ Réponds UNIQUEMENT en JSON compact sur une seule ligne, sans aucun texte avant 
 Règles :
 - r=null si absent, u="u" si absente, pa=0 si absent, pg=numéro de la section === PAGE N === où le produit apparaît.
 - VARIANTES PAR CLASSE : si un article a plusieurs prix selon une classe (VENERE/AMBRA/TERRA/LUCE/FREE/CLASSIC/ANTIQUE/WIDE), extraire UN article par prix. Concaténer code + variante dans r.
-- TABLEAUX MULTI-COLONNES : une ligne avec N prix = N articles distincts. Construire r avec essence+grade+colonne.
+- TABLEAUX MULTI-COLONNES : une ligne avec N prix = N articles distincts.
 - MÊME RÉFÉRENCE SUR PAGES DIFFÉRENTES avec prix différents = produits distincts.
 - DÉCLINAISONS DE TAILLE/DIMENSION : extraire UN article par dimension.
 - Extraire TOUTES les lignes ayant un prix, y compris forfaits, suppléments, accessoires.
-- LANGUE : ignorer les blocs purement en espagnol ou italien (phrases entières), ne pas dupliquer.
+- LANGUE : ignorer les blocs purement en espagnol ou italien.
 
 TEXTE DU CATALOGUE :
 ${text}`;
+
+  const resp = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "x-api-key": anthropicKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+    body: JSON.stringify({ model: "claude-haiku-4-5-20251001", max_tokens: 8192, messages: [{ role: "user", content: prompt }] }),
+  });
+
+  if (!resp.ok) throw new Error(`Claude API: ${await resp.text()}`);
+  const data = await resp.json();
+  return parseAI((data.content?.[0]?.text ?? "").trim());
+}
+
+// --- Fallback PDF direct ---
+
+async function extractWithClaudePDF(buffer: ArrayBuffer, anthropicKey: string): Promise<Produit[]> {
+  const pdfDoc = await PDFDocument.load(buffer);
+  const totalPages = pdfDoc.getPageCount();
+
+  if (totalPages <= MAX_PDF_PAGES) {
+    return callClaudeVision(buffer, anthropicKey);
+  }
+
+  const all: Produit[] = [];
+  for (let start = 0; start < totalPages; start += MAX_PDF_PAGES) {
+    const end = Math.min(start + MAX_PDF_PAGES, totalPages);
+    const chunk = await PDFDocument.create();
+    const pages = await chunk.copyPages(pdfDoc, Array.from({ length: end - start }, (_, i) => start + i));
+    pages.forEach(p => chunk.addPage(p));
+    const chunkBytes = await chunk.save();
+    all.push(...await callClaudeVision(chunkBytes.buffer, anthropicKey));
+    if (end < totalPages) await new Promise(r => setTimeout(r, 3000));
+  }
+  return deduplicate(all);
+}
+
+async function callClaudeVision(buffer: ArrayBuffer, anthropicKey: string): Promise<Produit[]> {
+  const bytes = new Uint8Array(buffer);
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 8192) bin += String.fromCharCode(...bytes.subarray(i, i + 8192));
+  const base64 = btoa(bin);
 
   const resp = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -216,11 +277,22 @@ ${text}`;
       "x-api-key": anthropicKey,
       "anthropic-version": "2023-06-01",
       "content-type": "application/json",
+      "anthropic-beta": "pdfs-2024-09-25",
     },
     body: JSON.stringify({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 8192,
-      messages: [{ role: "user", content: prompt }],
+      model: "claude-sonnet-4-6",
+      max_tokens: 32000,
+      messages: [{
+        role: "user",
+        content: [
+          { type: "document", source: { type: "base64", media_type: "application/pdf", data: base64 } },
+          { type: "text", text: `Extrais TOUS les produits de ce catalogue fournisseur sans en omettre aucun.
+Pour chaque produit : référence article, désignation complète, unité de vente, prix HT en euros.
+Réponds UNIQUEMENT en JSON compact sur une seule ligne :
+{"p":[{"r":"ref_ou_null","d":"designation","u":"unite","pa":0.00}]}
+Règles : r=null si absent, u="u" si absente, pa=0 si absent.` },
+        ],
+      }],
     }),
   });
 
@@ -228,6 +300,34 @@ ${text}`;
   const data = await resp.json();
   return parseAI((data.content?.[0]?.text ?? "").trim());
 }
+
+// --- CSV direct (fichier source CSV) ---
+
+function parseCSVDirect(text: string): Produit[] {
+  const lines = text.replace(/\r\n/g, "\n").split("\n").filter(l => l.trim());
+  if (lines.length < 2) return [];
+  const sep = lines[0].includes(";") ? ";" : ",";
+  const headers = lines[0].split(sep).map(h => h.trim().toLowerCase().replace(/"/g, ""));
+  const col = (...names: string[]) => names.map(n => headers.findIndex(h => h.includes(n))).find(i => i !== -1) ?? -1;
+  const refCol = col("ref", "code", "article");
+  const desCol = col("désignation", "designation", "libellé", "nom");
+  const uCol   = col("unité", "unite");
+  const pCol   = col("prix", "pa", "tarif");
+  if (desCol === -1) return [];
+  return lines.slice(1).flatMap(l => {
+    const c = l.split(sep).map(x => x.trim().replace(/"/g, ""));
+    if (!c[desCol]) return [];
+    return [{
+      reference: refCol !== -1 ? (c[refCol] || null) : null,
+      designation: c[desCol],
+      unite: uCol !== -1 ? (c[uCol] || "u") : "u",
+      prix_achat: pCol !== -1 ? parseFloat((c[pCol] ?? "0").replace(",", ".")) || 0 : 0,
+      page: null,
+    }];
+  });
+}
+
+// --- Utilitaires ---
 
 function parseAI(text: string): Produit[] {
   const match = text.match(/\{[\s\S]*\}/);
@@ -300,8 +400,8 @@ function compare(source: Produit[], db: Produit[]): { total_pdf: number; manquan
   const indexPDF = buildIndex(deduped);
   const indexDB  = buildIndex(db);
 
-  const manquants: Produit[]   = [];
-  const fantomes: Produit[]    = [];
+  const manquants: Produit[]     = [];
+  const fantomes: Produit[]      = [];
   const ecarts_prix: EcartPrix[] = [];
 
   for (const [key, p] of indexPDF) {

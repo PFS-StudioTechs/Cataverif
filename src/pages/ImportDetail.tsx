@@ -516,7 +516,7 @@ export default function ImportDetail() {
           </label>
           <button
             onClick={runCompare}
-            disabled={comparing || !extractionStoragePath}
+            disabled={comparing}
             className="flex items-center gap-1.5 text-sm border border-blue-300 text-blue-700 rounded-lg px-4 py-2 hover:bg-blue-50 transition-colors disabled:opacity-40"
           >
             <GitCompare className={`w-4 h-4 ${comparing ? 'animate-spin' : ''}`} />
