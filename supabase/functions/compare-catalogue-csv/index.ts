@@ -497,7 +497,7 @@ function normalizeProduit(obj: unknown): Produit {
     reference: ref ? String(ref).trim() || null : null,
     designation: String(o.d ?? o.designation ?? "").trim(),
     unite: String(o.u ?? o.unite ?? "u").trim() || "u",
-    prix_achat: Math.max(0, typeof raw === "number" ? raw : parseFloat(String(raw)) || 0),
+    prix_achat: Math.max(0, typeof raw === "number" ? raw : parseFloat(String(raw).replace(",", ".")) || 0),
     page,
   };
 }

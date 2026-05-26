@@ -129,7 +129,10 @@ def extract_tables(file_bytes: bytes) -> bytes:
 
     for page_num, page in enumerate(doc, start=1):
         try:
-            tables = page.find_tables()
+            try:
+                tables = page.find_tables(strategy="lines")
+            except Exception:
+                tables = page.find_tables()
             for t_idx, table in enumerate(tables):
                 rows = table.extract()
                 for r_idx, row in enumerate(rows):
