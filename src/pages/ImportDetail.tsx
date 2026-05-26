@@ -92,7 +92,7 @@ export default function ImportDetail() {
   const [sortManquantsDir, setSortManquantsDir] = useState<'asc' | 'desc'>('asc')
   const [extractingText, setExtractingText] = useState(false)
   const [extractTextMsg, setExtractTextMsg] = useState<string | null>(null)
-  const [extractionStoragePath, setExtractionStoragePath] = useState<string | null>(null)
+
   const [uploadingRetouched, setUploadingRetouched] = useState(false)
   const [uploadRetouchedMsg, setUploadRetouchedMsg] = useState<string | null>(null)
   const [importResult, setImportResult] = useState<ImportModeResult | null>(null)
@@ -239,10 +239,6 @@ export default function ImportDetail() {
         setLoading(false)
         const saved = localStorage.getItem(`cataverif-compare-${id}`)
         if (saved) { try { setCompareResult(JSON.parse(saved)) } catch {} }
-        const { data: extractionFiles } = await supabase.storage.from('artisan-documents').list('extraction', { search: `${id}.csv` })
-        if (extractionFiles?.some(f => f.name === `${id}.csv`)) {
-          setExtractionStoragePath(`extraction/${id}.csv`)
-        }
       })
   }, [id])
 
@@ -285,7 +281,6 @@ export default function ImportDetail() {
       let result: Record<string, unknown>
       try { result = await resp.json() } catch { result = { error: `Erreur serveur (${resp.status})` } }
       if (!resp.ok || result.error) throw new Error(typeof result.error === 'string' ? result.error : 'Erreur serveur')
-      setExtractionStoragePath(result.storage_path as string)
       setExtractTextMsg(`Extraction terminée — ${result.nb_blocs} blocs extraits`)
       let downloadUrl = result.url as string | undefined
       if (!downloadUrl) {
@@ -319,7 +314,6 @@ export default function ImportDetail() {
         upsert: true,
       })
       if (error) throw new Error(error.message)
-      setExtractionStoragePath(path)
       setUploadRetouchedMsg('Fichier retravaillé chargé — prêt pour comparaison')
     } catch (e) {
       setUploadRetouchedMsg(`Erreur : ${e instanceof Error ? e.message : 'Erreur inconnue'}`)
