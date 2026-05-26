@@ -287,7 +287,17 @@ export default function ImportDetail() {
       if (!resp.ok || result.error) throw new Error(typeof result.error === 'string' ? result.error : 'Erreur serveur')
       setExtractionStoragePath(result.storage_path as string)
       setExtractTextMsg(`Extraction terminée — ${result.nb_blocs} blocs extraits`)
-      if (result.url) window.open(result.url as string, '_blank')
+      let downloadUrl = result.url as string | undefined
+      if (!downloadUrl) {
+        const { data: signed } = await supabase.storage.from('artisan-documents').createSignedUrl(result.storage_path as string, 60)
+        downloadUrl = signed?.signedUrl
+      }
+      if (downloadUrl) {
+        const a = document.createElement('a')
+        a.href = downloadUrl
+        a.download = `extraction-${imp.fournisseurs?.nom ?? id}.csv`
+        a.click()
+      }
     } catch (e) {
       setExtractTextMsg(`Erreur : ${e instanceof Error ? e.message : 'Erreur inconnue'}`)
     } finally {
