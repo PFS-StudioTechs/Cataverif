@@ -157,6 +157,15 @@ serve(async (req) => {
 
 // --- Extraction hybride : 2 CSV combinés ---
 
+function normalizeHeader(h: string): string {
+  return h.trim()
+    .replace(/^﻿/, "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")  // strip combining diacriticals: "réf."→"ref.", "désignation"→"designation"
+    .replace(/�/g, "");          // strip replacement chars (CP1252 mojibake)
+}
+
 const REF_PATTERN = /^[A-Z][A-Z0-9]{4,14}$/;
 const PRICE_PATTERN = /^\d{1,5}[,\.]\d{2}$/;
 
@@ -196,7 +205,7 @@ async function extractFromDualCSV(textContent: string, tablesContent: string, an
   // Si tableaux structurés (avec colonnes ref/designation/prix), parser directement
   if (tablesContent) {
     const firstLine = tablesContent.replace(/\r\n/g, "\n").split("\n")[0] ?? "";
-    const headers = firstLine.split(";").map(h => h.trim().toLowerCase().replace(/^﻿/, ""));
+    const headers = firstLine.split(";").map(normalizeHeader);
     if (isStructuredCSV(headers)) {
       return { produits: parseStructuredCSV(tablesContent, headers), method: "tables_structure" };
     }
@@ -322,7 +331,7 @@ ${text}`;
 async function parseCSV(csvText: string, anthropicKey: string, userContext = "", userExamples: Produit[] = [], maxPage = Infinity): Promise<{ produits: Produit[]; method: string }> {
   const normalized = csvText.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   const firstLine = normalized.split("\n")[0] ?? "";
-  const headers = firstLine.split(";").map(h => h.trim().toLowerCase().replace(/^﻿/, ""));
+  const headers = firstLine.split(";").map(normalizeHeader);
 
   if (isStructuredCSV(headers)) {
     return { produits: parseStructuredCSV(normalized, headers), method: "csv_structure" };
@@ -332,8 +341,14 @@ async function parseCSV(csvText: string, anthropicKey: string, userContext = "",
 }
 
 function isStructuredCSV(headers: string[]): boolean {
-  const required = ["designation", "prix_achat"];
-  return required.every(r => headers.some(h => h.includes(r)));
+  // headers already normalized via normalizeHeader() — ASCII only, no accents
+  const hasDesignation = headers.some(h =>
+    h.includes("designation") || h.includes("libelle") || h.includes("nom")
+  );
+  const hasPrix = headers.some(h =>
+    h.includes("prix") || h.includes("pa") || h.includes("tarif")
+  );
+  return hasDesignation && hasPrix;
 }
 
 function parseStructuredCSV(csvText: string, headers: string[]): Produit[] {
@@ -347,10 +362,11 @@ function parseStructuredCSV(csvText: string, headers: string[]): Produit[] {
     return -1;
   };
 
+  // headers already normalized via normalizeHeader(): "réf."→"ref.", "désignation"→"designation", etc.
   const refCol = col("ref", "reference", "code", "article");
-  const desCol = col("designation", "désignation", "libellé", "nom");
-  const uCol   = col("unite", "unité");
-  const pCol   = col("prix_achat", "prix", "pa", "tarif");
+  const desCol = col("designation", "libelle", "nom", "description");
+  const uCol   = col("unite");
+  const pCol   = col("prix", "pa", "tarif");
 
   if (desCol === -1) return [];
 
@@ -371,16 +387,23 @@ function parseStructuredCSV(csvText: string, headers: string[]): Produit[] {
 
 async function extractFromTextCSV(csvText: string, anthropicKey: string, userContext = "", userExamples: Produit[] = [], maxPage = Infinity): Promise<Produit[]> {
   const lines = csvText.split("\n").slice(1);
+  const deterministicProduits: Produit[] = [];
   const pages = new Map<number, string[]>();
 
   for (const line of lines) {
-    const cells = line.split(";");
-    const page = parseInt(cells[0] ?? "0") || 0;
-    if (page > maxPage) continue;
-    const texte = (cells[1] ?? "").trim();
-    if (texte) {
+    const sepIdx = line.indexOf(";");
+    if (sepIdx === -1) continue;
+    const page = parseInt(line.slice(0, sepIdx)) || 0;
+    if (page === 0 || page > maxPage) continue;
+    const texte = line.slice(sepIdx + 1).replace(/^"/, "").replace(/"$/, "").trim();
+    if (!texte) continue;
+
+    const parsed = tryParseProductBlock(page, texte);
+    if (parsed) {
+      deterministicProduits.push(parsed);
+    } else {
       if (!pages.has(page)) pages.set(page, []);
-      pages.get(page)!.push(texte);
+      pages.get(page)!.push(texte.replace(/\\n/g, "\n"));
     }
   }
 
@@ -389,14 +412,14 @@ async function extractFromTextCSV(csvText: string, anthropicKey: string, userCon
     .map(([page, blocs]) => ({ page, text: blocs.join("\n\n") }))
     .filter(p => p.text);
 
-  const all: Produit[] = [];
+  const claudeProduits: Produit[] = [];
   for (let i = 0; i < pagesText.length; i += CHUNK_SIZE) {
     const chunk = pagesText.slice(i, i + CHUNK_SIZE);
     const chunkText = chunk.map(({ page, text }) => `=== PAGE ${page} ===\n${text}`).join("\n\n---\n\n");
-    all.push(...await callClaudeText(chunkText, anthropicKey, userContext, userExamples));
+    claudeProduits.push(...await callClaudeText(chunkText, anthropicKey, userContext, userExamples));
   }
 
-  return deduplicateSmart(all);
+  return deduplicateSmart([...deterministicProduits, ...claudeProduits]);
 }
 
 async function callClaudeText(text: string, anthropicKey: string, userContext = "", userExamples: Produit[] = []): Promise<Produit[]> {
