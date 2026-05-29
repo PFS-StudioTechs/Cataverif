@@ -61,7 +61,7 @@ type Import = {
   created_at: string
   artisan_id: string
   fournisseur_id: string
-  fournisseurs: { nom: string } | null
+  fournisseurs: { nom: string; catalogue_fournisseur_id: string | null } | null
 }
 
 const statutBadge = (s: string) => {
@@ -137,7 +137,7 @@ export default function ImportDetail() {
     const data = editManquantIdx === origIdx ? editManquantData : { reference: p.reference, designation: p.designation, unite: p.unite, prix_achat: p.prix_achat }
     await supabase.from('produits').insert({
       artisan_id: imp.artisan_id,
-      fournisseur_id: imp.fournisseur_id,
+      fournisseur_id: imp.fournisseurs?.catalogue_fournisseur_id,
       import_id: id,
       reference: data.reference,
       designation: data.designation,
@@ -163,7 +163,7 @@ export default function ImportDetail() {
     for (const origIdx of selectedManquants) {
       const p = compareResult.manquants[origIdx]
       await supabase.from('produits').insert({
-        artisan_id: imp.artisan_id, fournisseur_id: imp.fournisseur_id, import_id: id,
+        artisan_id: imp.artisan_id, fournisseur_id: imp.fournisseurs?.catalogue_fournisseur_id, import_id: id,
         reference: p.reference, designation: p.designation, unite: p.unite, prix_achat: p.prix_achat, page_catalogue: p.page ?? null, statut_import: 'valide', actif: true,
       })
     }
@@ -177,7 +177,7 @@ export default function ImportDetail() {
     const toValidate = compareResult.manquants.map((p, i) => ({ p, i })).filter(({ i }) => !dupOrigIndices.has(i))
     for (const { p } of toValidate) {
       await supabase.from('produits').insert({
-        artisan_id: imp.artisan_id, fournisseur_id: imp.fournisseur_id, import_id: id,
+        artisan_id: imp.artisan_id, fournisseur_id: imp.fournisseurs?.catalogue_fournisseur_id, import_id: id,
         reference: p.reference, designation: p.designation, unite: p.unite, prix_achat: p.prix_achat, page_catalogue: p.page ?? null, statut_import: 'valide', actif: true,
       })
     }
@@ -242,13 +242,13 @@ export default function ImportDetail() {
 
   useEffect(() => {
     if (!id) return
-    supabase.from('catalogue_imports').select('*, fournisseurs(nom)').eq('id', id).single()
+    supabase.from('catalogue_imports').select('*, fournisseurs(nom, catalogue_fournisseur_id)').eq('id', id).single()
       .then(async (impRes) => {
         const imp = impRes.data as Import
         setImp(imp)
         const [prodsRes, allProdsRes] = await Promise.all([
           supabase.from('produits').select('*').eq('import_id', id).order('designation'),
-          supabase.from('produits').select('*').eq('fournisseur_id', imp.fournisseur_id).eq('actif', true).order('designation'),
+          supabase.from('produits').select('*').eq('fournisseur_id', imp.fournisseurs?.catalogue_fournisseur_id ?? '').eq('actif', true).order('designation'),
         ])
         setProduits((prodsRes.data as Produit[]) ?? [])
         setAllProduits((allProdsRes.data as Produit[]) ?? [])
@@ -436,7 +436,7 @@ export default function ImportDetail() {
       : compareResult.manquants
     const rows = toImport.map(p => ({
       artisan_id: imp.artisan_id,
-      fournisseur_id: imp.fournisseur_id,
+      fournisseur_id: imp.fournisseurs?.catalogue_fournisseur_id,
       import_id: id,
       reference: p.reference,
       designation: p.designation,
@@ -780,7 +780,7 @@ export default function ImportDetail() {
                         if (!imp) return
                         const toImport = importResult.articles.filter((_, i) => selectedArticles.has(i))
                         await supabase.from('produits').insert(toImport.map(p => ({
-                          artisan_id: imp.artisan_id, fournisseur_id: imp.fournisseur_id, import_id: id,
+                          artisan_id: imp.artisan_id, fournisseur_id: imp.fournisseurs?.catalogue_fournisseur_id, import_id: id,
                           reference: p.reference, designation: p.designation, unite: p.unite, prix_achat: p.prix_achat,
                           page_catalogue: p.page ?? null, statut_import: 'valide', actif: true,
                         })))
@@ -797,7 +797,7 @@ export default function ImportDetail() {
                       if (!imp) return
                       setCompareError(null)
                       const rows = importResult.articles.map(p => ({
-                        artisan_id: imp.artisan_id, fournisseur_id: imp.fournisseur_id, import_id: id,
+                        artisan_id: imp.artisan_id, fournisseur_id: imp.fournisseurs?.catalogue_fournisseur_id, import_id: id,
                         reference: p.reference, designation: p.designation, unite: p.unite, prix_achat: p.prix_achat,
                         page_catalogue: p.page ?? null, statut_import: 'valide', actif: true,
                       }))
