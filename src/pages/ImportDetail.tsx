@@ -145,6 +145,7 @@ export default function ImportDetail() {
       prix_achat: data.prix_achat,
       page_catalogue: p.page ?? null,
       statut_import: 'valide',
+      actif: true,
     })
     setEditManquantIdx(null)
     setCompareResult(prev => prev ? { ...prev, manquants: prev.manquants.filter((_, j) => j !== origIdx) } : prev)
@@ -163,7 +164,7 @@ export default function ImportDetail() {
       const p = compareResult.manquants[origIdx]
       await supabase.from('produits').insert({
         artisan_id: imp.artisan_id, fournisseur_id: imp.fournisseur_id, import_id: id,
-        reference: p.reference, designation: p.designation, unite: p.unite, prix_achat: p.prix_achat, page_catalogue: p.page ?? null, statut_import: 'valide',
+        reference: p.reference, designation: p.designation, unite: p.unite, prix_achat: p.prix_achat, page_catalogue: p.page ?? null, statut_import: 'valide', actif: true,
       })
     }
     setCompareResult(prev => prev ? { ...prev, manquants: prev.manquants.filter((_, j) => !selectedManquants.has(j)) } : prev)
@@ -177,7 +178,7 @@ export default function ImportDetail() {
     for (const { p } of toValidate) {
       await supabase.from('produits').insert({
         artisan_id: imp.artisan_id, fournisseur_id: imp.fournisseur_id, import_id: id,
-        reference: p.reference, designation: p.designation, unite: p.unite, prix_achat: p.prix_achat, page_catalogue: p.page ?? null, statut_import: 'valide',
+        reference: p.reference, designation: p.designation, unite: p.unite, prix_achat: p.prix_achat, page_catalogue: p.page ?? null, statut_import: 'valide', actif: true,
       })
     }
     const toValidateSet = new Set(toValidate.map(({ i }) => i))
@@ -441,7 +442,9 @@ export default function ImportDetail() {
       designation: p.designation,
       unite: p.unite,
       prix_achat: p.prix_achat,
+      page_catalogue: p.page ?? null,
       statut_import: 'valide',
+      actif: true,
     }))
     if (rows.length > 0) {
       await supabase.from('produits').insert(rows)
@@ -779,7 +782,7 @@ export default function ImportDetail() {
                         await supabase.from('produits').insert(toImport.map(p => ({
                           artisan_id: imp.artisan_id, fournisseur_id: imp.fournisseur_id, import_id: id,
                           reference: p.reference, designation: p.designation, unite: p.unite, prix_achat: p.prix_achat,
-                          page_catalogue: p.page ?? null, statut_import: 'valide',
+                          page_catalogue: p.page ?? null, statut_import: 'valide', actif: true,
                         })))
                         setImportResult(prev => prev ? { ...prev, articles: prev.articles.filter((_, i) => !selectedArticles.has(i)) } : prev)
                         setSelectedArticles(new Set())
@@ -792,11 +795,17 @@ export default function ImportDetail() {
                   <button
                     onClick={async () => {
                       if (!imp) return
-                      await supabase.from('produits').insert(importResult.articles.map(p => ({
+                      setCompareError(null)
+                      const rows = importResult.articles.map(p => ({
                         artisan_id: imp.artisan_id, fournisseur_id: imp.fournisseur_id, import_id: id,
                         reference: p.reference, designation: p.designation, unite: p.unite, prix_achat: p.prix_achat,
-                        page_catalogue: p.page ?? null, statut_import: 'valide',
-                      })))
+                        page_catalogue: p.page ?? null, statut_import: 'valide', actif: true,
+                      }))
+                      const CHUNK = 500
+                      for (let i = 0; i < rows.length; i += CHUNK) {
+                        const { error } = await supabase.from('produits').insert(rows.slice(i, i + CHUNK))
+                        if (error) { setCompareError(`Import échoué (lot ${Math.floor(i / CHUNK) + 1}) : ${error.message}`); return }
+                      }
                       setImportResult(null)
                     }}
                     className="text-xs px-2 py-1 rounded border border-green-500 text-green-700 bg-green-50 hover:bg-green-100 transition-colors font-medium"
